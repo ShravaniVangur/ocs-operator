@@ -875,11 +875,11 @@ func createMetricsExporterRoles(ctx context.Context, r *StorageClusterReconciler
 				Resources: []string{"prometheusrules", "servicemonitors"},
 				Verbs:     []string{"get", "list", "watch", "create", "update", "delete"},
 			},
-			{
-				APIGroups: []string{"ceph.rook.io"},
-				Resources: []string{"cephobjectstores", "cephclusters", "cephblockpools", "cephrbdmirrors", "cephblockpoolradosnamespaces"},
-				Verbs:     []string{"get", "list", "watch"},
-			},
+		{
+			APIGroups: []string{"ceph.rook.io"},
+			Resources: []string{"cephobjectstores", "cephclusters", "cephblockpools", "cephrbdmirrors", "cephblockpoolradosnamespaces", "cephfilesystemsubvolumegroups"},
+			Verbs:     []string{"get", "list", "watch"},
+		},
 			{
 				APIGroups: []string{"objectbucket.io"},
 				Resources: []string{"objectbucketclaims"},
