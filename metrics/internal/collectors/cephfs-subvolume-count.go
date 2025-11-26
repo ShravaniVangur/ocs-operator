@@ -49,14 +49,9 @@ func (c *CephFSSubvolumeCountCollector) Collect(ch chan<- prometheus.Metric) {
 		float64(totalPVCount),
 	)
 
-	totalSubvolumeCount := 0
-	for _, count := range c.CephfsPVStore.CephFSSbvolumeCountMap {
-		totalSubvolumeCount += count
-	}
-
 	ch <- prometheus.MustNewConstMetric(
 		c.TotalSubvolumeCount,
 		prometheus.GaugeValue,
-		float64(totalSubvolumeCount),
+		float64(c.CephfsPVStore.CephFSSbvolumeCount),
 	)
 }

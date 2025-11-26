@@ -123,9 +123,6 @@ var _ = Describe("PersistentVolume Cache", func() {
 				Expect(pvStore.CephFSPVList).To(HaveKey(types.UID("cephfs-uid")))
 				Expect(pvStore.CephFSPVList[types.UID("cephfs-uid")]).To(Equal("test-cephfs-pv"))
 
-				// Verify FSName is extracted
-				Expect(pvStore.FSName).To(Equal("myfs"))
-
 				// Verify it's NOT in the RBD Store
 				Expect(pvStore.Store).ToNot(HaveKey(types.UID("cephfs-uid")))
 			})

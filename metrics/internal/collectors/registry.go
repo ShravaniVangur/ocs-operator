@@ -114,7 +114,7 @@ func enableCephFSPVStore(opts *options.Options) {
 	cephFSPVStore = internalcache.NewPersistentVolumeStore(opts)
 	client := clientset.NewForConfigOrDie(opts.Kubeconfig)
 	lw := internalcache.CreatePersistentVolumeListWatch(client, "")
-	reflector := cache.NewReflector(lw, &corev1.PersistentVolume{}, cephFSPVStore, 24*time.Hour)
+	reflector := cache.NewReflector(lw, &corev1.PersistentVolume{}, cephFSPVStore, 30*time.Second)
 	go reflector.Run(opts.StopCh)
 	cephFSPVStoreEnabled = true
 }

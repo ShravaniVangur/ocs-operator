@@ -497,7 +497,7 @@ spec:
         runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/openshift-container-storage-operator/CephFSStaleSubvolume.md
         severity_level: warning
       expr: |
-        ocs_cephfs_pv_count != ocs_cephfs_subvolume_count
-      for: 2h
+        ocs_cephfs_pv_count < ocs_cephfs_subvolume_count
+      for: 10s
       labels:
         severity: warning

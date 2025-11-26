@@ -11,8 +11,6 @@ import (
 
 	"github.com/red-hat-storage/ocs-operator/metrics/v4/internal/options"
 	"github.com/red-hat-storage/ocs-operator/v4/controllers/util"
-	cephv1 "github.com/rook/rook/pkg/apis/ceph.rook.io/v1"
-	rookclient "github.com/rook/rook/pkg/client/clientset/versioned"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,22 +33,23 @@ type PersistentVolumeStore struct {
 	// Store is a map of PV UID to PersistentVolumeAttributes
 	Store map[types.UID]PersistentVolumeAttributes
 	// RBDClientMap is a map of RBD client addresses to the names of the nodes whose images had this client as a watcher
-	RBDClientMap           map[string][]string
-	RBDChildrenMap         map[string]int
-	monitorConfig          cephMonitorConfig
-	kubeClient             clientset.Interface
-	rookClient             rookclient.Interface
-	cephClusterNamespace   string
-	cephAuthNamespace      string
-	CephFSPVList           map[types.UID]string
-	CephFSSbvolumeCountMap map[string]int
+	RBDClientMap         map[string][]string
+	RBDChildrenMap       map[string]int
+	monitorConfig        cephMonitorConfig
+	kubeClient           clientset.Interface
+	cephClusterNamespace string
+	cephAuthNamespace    string
+	CephFSPVList         map[types.UID]string
+	CephFSSbvolumeCount  int
+	CephFilesystem       string
+	CephFSSbvolumeGroup  string
 	// Functions to make testing easier
 	initCephFn                func(kubeclient clientset.Interface, cephClusterNamespace, cephAuthNamespace string) (cephMonitorConfig, error)
 	runCephRBDStatusFn        func(config *cephMonitorConfig, pool, namespace, image string) (Clients, error)
 	runCephRBDChildrenCountFn func(config *cephMonitorConfig, pool, namespace, image string) (int, error)
 	// TODO: Use fake k8s client instead
 	getNodeNameForPVFn        func(pv *corev1.PersistentVolume, kubeClient clientset.Interface) (string, error)
-	runCephfsSubvolumeCountFn func(config *cephMonitorConfig, rookClient rookclient.Interface, cephClusterNamespace string) (map[string]int, error)
+	runCephfsSubvolumeCountFn func(config *cephMonitorConfig, cephFilesystem string, subvolumegroup string, cephClusterNamespace string) (int, error)
 }
 
 type Watcher struct {
@@ -85,12 +84,13 @@ func NewPersistentVolumeStore(opts *options.Options) *PersistentVolumeStore {
 		RBDClientMap:              map[string][]string{},
 		RBDChildrenMap:            make(map[string]int),
 		kubeClient:                clientset.NewForConfigOrDie(opts.Kubeconfig),
-		rookClient:                rookclient.NewForConfigOrDie(opts.Kubeconfig),
 		monitorConfig:             cephMonitorConfig{},
 		cephClusterNamespace:      opts.AllowedNamespaces[0],
 		cephAuthNamespace:         opts.CephAuthNamespace,
 		CephFSPVList:              make(map[types.UID]string),
-		CephFSSbvolumeCountMap:    make(map[string]int),
+		CephFSSbvolumeCount:       0,
+		CephFilesystem:            "ocs-storagecluster-cephfilesystem",
+		CephFSSbvolumeGroup:       "csi",
 		initCephFn:                initCeph,
 		runCephRBDStatusFn:        runCephRBDStatus,
 		runCephRBDChildrenCountFn: runCephRBDChildrenCount,
@@ -369,11 +369,11 @@ func (p *PersistentVolumeStore) Resync() error {
 	}
 
 	klog.Infof("Running CephFS subvolume count for %d CephFS PVs", len(p.CephFSPVList))
-	subvolGroupCounts, err := p.runCephfsSubvolumeCountFn(&p.monitorConfig, p.rookClient, p.cephClusterNamespace)
+	subvolGroupCounts, err := p.runCephfsSubvolumeCountFn(&p.monitorConfig, p.CephFilesystem, p.CephFSSbvolumeGroup, p.cephClusterNamespace)
 	if err != nil {
 		klog.Errorf("failed to get CephFS subvolume counts: %v", err)
 	} else {
-		p.CephFSSbvolumeCountMap = subvolGroupCounts
+		p.CephFSSbvolumeCount = subvolGroupCounts
 	}
 
 	klog.Infof("PV store Resync ended at %v", time.Now())
@@ -393,85 +393,15 @@ func CreatePersistentVolumeListWatch(kubeClient clientset.Interface, fieldSelect
 	}
 }
 
-func runCephFSSubvolumeCount(config *cephMonitorConfig, rookClient rookclient.Interface, cephClusterNamespace string) (map[string]int, error) {
+func runCephFSSubvolumeCount(config *cephMonitorConfig, cephFilesystem string, subvolumegroup string, cephClusterNamespace string) (int, error) {
 
-	groups, filesystemName, err := getCephFSSubvolumeGroups(rookClient, cephClusterNamespace)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get subvolumegroups: %w", err)
-	}
-
-	result := make(map[string]int)
-	for _, groupName := range groups {
-		count, err := runCephFSSubvolumeCountPerGroup(config, filesystemName, groupName)
-		if err != nil {
-			klog.Errorf("Failed to get subvolume count for %s/%s: %v", filesystemName, groupName, err)
-			continue
-		}
-		result[groupName] = count
-	}
-
-	return result, nil
-}
-
-// getCephFSSubvolumeGroupsFromCRs gets subvolumegroup names from CephFilesystemSubVolumeGroup CRs
-func getCephFSSubvolumeGroups(rookClient rookclient.Interface, cephClusterNamespace string) ([]string, string, error) {
-	svgList, err := rookClient.CephV1().CephFilesystemSubVolumeGroups(cephClusterNamespace).List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to list CephFilesystemSubVolumeGroup CRs: %w", err)
-	}
-
-	if len(svgList.Items) == 0 {
-		klog.V(4).Infof("No CephFilesystemSubVolumeGroup CRs found for filesystem %s", cephClusterNamespace)
-		return []string{}, "", nil
-	}
-
-	groupNames := make([]string, 0)
-	filesystemName := ""
-	for _, svg := range svgList.Items {
-		var _ *cephv1.CephFilesystemSubVolumeGroup = &svg // Type assertion to use import
-		// Skip consumer subvolumegroups (monitored by consumer's own metrics)
-		if strings.HasPrefix(svg.Name, "csi-consumer-") {
-			klog.V(4).Infof("Skipping consumer subvolumegroup: %s", svg.Name)
-			continue
-		}
-
-		// Get filesystem name from spec
-		svgFilesystem := svg.Spec.FilesystemName
-		if svgFilesystem == "" {
-			klog.Warningf("CephFilesystemSubVolumeGroup %s has no filesystemName in spec, skipping", svg.Name)
-			continue
-		}
-
-		// Set filesystem name from first valid subvolumegroup
-		if filesystemName == "" {
-			filesystemName = svgFilesystem
-			klog.V(4).Infof("Using filesystem: %s", filesystemName)
-		} else if filesystemName != svgFilesystem {
-			// Multiple filesystems found - log warning but skip this SVG
-			klog.Warningf("Multiple filesystems detected: %s vs %s. Skipping subvolumegroup %s", filesystemName, svgFilesystem, svg.Name)
-			continue
-		}
-
-		groupNames = append(groupNames, svg.Name)
-		klog.V(4).Infof("Found subvolumegroup %s for filesystem %s", svg.Name, filesystemName)
-	}
-
-	if filesystemName == "" {
-		return nil, "", fmt.Errorf("no valid filesystem found in CephFilesystemSubVolumeGroup CRs")
-	}
-
-	return groupNames, filesystemName, nil
-}
-
-// runCephFSSubvolumeCountSingle gets the count of subvolumes in a specific subvolumegroup
-func runCephFSSubvolumeCountPerGroup(config *cephMonitorConfig, fsName, groupName string) (int, error) {
 	if config.monitor == "" && config.id == "" && config.key == "" {
 		return 0, fmt.Errorf("unable to get subvolume count. monitor config missing")
 	}
 
 	args := []string{
-		"fs", "subvolume", "ls", fsName,
-		"--group_name", groupName,
+		"fs", "subvolume", "ls", cephFilesystem,
+		"--group_name", subvolumegroup,
 		"--format", "json",
 		"-m", config.monitor,
 		"--id", config.id,
@@ -506,6 +436,5 @@ func runCephFSSubvolumeCountPerGroup(config *cephMonitorConfig, fsName, groupNam
 		}
 		count++
 	}
-
 	return count, nil
 }
