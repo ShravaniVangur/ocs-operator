@@ -39,13 +39,17 @@ type PersistentVolumeStore struct {
 	kubeClient           clientset.Interface
 	cephClusterNamespace string
 	cephAuthNamespace    string
-
+	CephFSPVList         map[types.UID]string
+	CephFSSbvolumeCount  int
+	CephFilesystem       string
+	CephFSSbvolumeGroup  string
 	// Functions to make testing easier
 	initCephFn                func(kubeclient clientset.Interface, cephClusterNamespace, cephAuthNamespace string) (cephMonitorConfig, error)
 	runCephRBDStatusFn        func(config *cephMonitorConfig, pool, namespace, image string) (Clients, error)
 	runCephRBDChildrenCountFn func(config *cephMonitorConfig, pool, namespace, image string) (int, error)
 	// TODO: Use fake k8s client instead
-	getNodeNameForPVFn func(pv *corev1.PersistentVolume, kubeClient clientset.Interface) (string, error)
+	getNodeNameForPVFn        func(pv *corev1.PersistentVolume, kubeClient clientset.Interface) (string, error)
+	runCephfsSubvolumeCountFn func(config *cephMonitorConfig, cephFilesystem string, subvolumegroup string, cephClusterNamespace string) (int, error)
 }
 
 type Watcher struct {
@@ -83,10 +87,15 @@ func NewPersistentVolumeStore(opts *options.Options) *PersistentVolumeStore {
 		monitorConfig:             cephMonitorConfig{},
 		cephClusterNamespace:      opts.AllowedNamespaces[0],
 		cephAuthNamespace:         opts.CephAuthNamespace,
+		CephFSPVList:              make(map[types.UID]string),
+		CephFSSbvolumeCount:       0,
+		CephFilesystem:            "ocs-storagecluster-cephfilesystem",
+		CephFSSbvolumeGroup:       "csi",
 		initCephFn:                initCeph,
 		runCephRBDStatusFn:        runCephRBDStatus,
 		runCephRBDChildrenCountFn: runCephRBDChildrenCount,
 		getNodeNameForPVFn:        getNodeNameForPV,
+		runCephfsSubvolumeCountFn: runCephFSSubvolumeCount,
 	}
 }
 
@@ -186,6 +195,21 @@ func (p *PersistentVolumeStore) Add(obj interface{}) error {
 // add is not thread-safe. So, it must to be called from a thread safe function only.
 func (p *PersistentVolumeStore) add(pv *corev1.PersistentVolume) error {
 	provisioner := pv.Annotations["pv.kubernetes.io/provisioned-by"]
+
+	if strings.Contains(provisioner, ".cephfs.csi.ceph.com") && pv.Spec.CSI.VolumeAttributes["clusterID"] == p.cephClusterNamespace {
+		p.CephFSPVList[pv.GetUID()] = pv.Name
+		klog.Infof("Added CephFS PV: %s", pv.Name)
+
+		if (p.monitorConfig == cephMonitorConfig{}) {
+			var err error
+			p.monitorConfig, err = p.initCephFn(p.kubeClient, p.cephClusterNamespace, p.cephAuthNamespace)
+			if err != nil {
+				return fmt.Errorf("failed to initialize ceph: %v", err)
+			}
+		}
+		return nil
+	}
+
 	if !strings.Contains(provisioner, ".rbd.csi.ceph.com") {
 		klog.Infof("Skipping non Ceph CSI RBD volume %s", pv.Name)
 		return nil
@@ -283,6 +307,7 @@ func (p *PersistentVolumeStore) Delete(obj interface{}) error {
 	defer p.Mutex.Unlock()
 
 	delete(p.Store, o.GetUID())
+	delete(p.CephFSPVList, o.GetUID())
 
 	return nil
 }
@@ -342,6 +367,15 @@ func (p *PersistentVolumeStore) Resync() error {
 			return fmt.Errorf("failed to process PV: %s err: %v", pv.Name, err)
 		}
 	}
+
+	klog.Infof("Running CephFS subvolume count for %d CephFS PVs", len(p.CephFSPVList))
+	subvolGroupCounts, err := p.runCephfsSubvolumeCountFn(&p.monitorConfig, p.CephFilesystem, p.CephFSSbvolumeGroup, p.cephClusterNamespace)
+	if err != nil {
+		klog.Errorf("failed to get CephFS subvolume counts: %v", err)
+	} else {
+		p.CephFSSbvolumeCount = subvolGroupCounts
+	}
+
 	klog.Infof("PV store Resync ended at %v", time.Now())
 	return nil
 }
@@ -357,4 +391,50 @@ func CreatePersistentVolumeListWatch(kubeClient clientset.Interface, fieldSelect
 			return kubeClient.CoreV1().PersistentVolumes().Watch(context.TODO(), opts)
 		},
 	}
+}
+
+func runCephFSSubvolumeCount(config *cephMonitorConfig, cephFilesystem string, subvolumegroup string, cephClusterNamespace string) (int, error) {
+
+	if config.monitor == "" && config.id == "" && config.key == "" {
+		return 0, fmt.Errorf("unable to get subvolume count. monitor config missing")
+	}
+
+	args := []string{
+		"fs", "subvolume", "ls", cephFilesystem,
+		"--group_name", subvolumegroup,
+		"--format", "json",
+		"-m", config.monitor,
+		"--id", config.id,
+		"--key", config.key,
+	}
+
+	cmd, err := execCommand("ceph", args, 30)
+	if err != nil {
+		return 0, fmt.Errorf("failed to execute subvolume count: %w", err)
+	}
+
+	if len(cmd) == 0 {
+		return 0, nil
+	}
+
+	decoder := json.NewDecoder(strings.NewReader(string(cmd)))
+
+	token, err := decoder.Token()
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse JSON: %w", err)
+	}
+
+	if delim, ok := token.(json.Delim); !ok || delim != '[' {
+		return 0, fmt.Errorf("expected JSON array, got %v", token)
+	}
+
+	count := 0
+	for decoder.More() {
+		var raw json.RawMessage
+		if err := decoder.Decode(&raw); err != nil {
+			return 0, fmt.Errorf("failed to decode array element: %w", err)
+		}
+		count++
+	}
+	return count, nil
 }
