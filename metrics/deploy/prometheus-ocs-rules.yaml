@@ -475,3 +475,29 @@ spec:
       for: 30s
       labels:
         severity: warning
+  - name: odf-operator-condition-alerts.rules
+    rules:
+    - alert: ODFOperatorNotUpgradeable
+      annotations:
+        description: ODF Operator is not upgradeable (Reason:{{ $labels.reason }}). Please resolve the issue to allow upgrades. See the Runbook for more details.
+        message: ODF Operator is marked as not upgradeable.
+        runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/openshift-container-storage-operator/ODFOperatorNotUpgradeable.md
+        severity_level: warning
+      expr: |
+        odf_operator_upgradeable_status{job="ocs-metrics-exporter"} == 0
+      for: 60s
+      labels:
+        severity: warning
+  - name: ceph-fs-stale-subvolume.rules
+    rules:
+    - alert: CephFSStaleSubvolume
+      annotations:
+        description: Number of CephFS subvolumes do not match the number of PersistentVolumes in the cluster.
+        message: There could be stale subvolumes that are not claimed or utilized. Please investigate for possible stale or orphaned subvolumes.
+        runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/openshift-container-storage-operator/CephFSStaleSubvolume.md
+        severity_level: warning
+      expr: |
+        ocs_cephfs_pv_count < ocs_cephfs_subvolume_count
+      for: 10s
+      labels:
+        severity: warning
