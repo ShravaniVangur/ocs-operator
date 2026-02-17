@@ -20,6 +20,7 @@ import (
 	cephv1 "github.com/rook/rook/pkg/apis/ceph.rook.io/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -255,8 +256,9 @@ func (r *StorageClusterReconciler) createExternalStorageClusterResources(instanc
 		Kind:       instance.Kind,
 		Name:       instance.Name,
 	}
-	// this stores only the StorageClasses specified in the Secret
+
 	availableSCCs := []StorageClassConfiguration{}
+	rbdSCParameters := map[string]string{}
 
 	var fsid string
 	if cephCluster, err := util.GetCephClusterInNamespace(r.ctx, r.Client, instance.Namespace); err != nil {
@@ -462,6 +464,9 @@ func (r *StorageClusterReconciler) createExternalStorageClusterResources(instanc
 			for k, v := range d.Data {
 				scc.storageClass.Parameters[k] = v
 			}
+			if d.Name == cephRbdStorageClassName {
+				maps.Copy(rbdSCParameters, scc.storageClass.Parameters)
+			}
 			// add external mode label to storageclass
 			util.AddLabel(scc.storageClass, util.ExternalClassLabelKey, strconv.FormatBool(true))
 			availableSCCs = append(availableSCCs, scc)
@@ -474,7 +479,52 @@ func (r *StorageClusterReconciler) createExternalStorageClusterResources(instanc
 		return err
 	}
 
-	// creating only the available storageClasses
+	// create virtualization storageclass if VirtualMachineCRD is present
+	var scc StorageClassConfiguration
+	crd := &metav1.PartialObjectMetadata{}
+	crd.SetGroupVersionKind(extv1.SchemeGroupVersion.WithKind("CustomResourceDefinition"))
+	crd.Name = VirtualMachineCrdName
+	if err := r.Get(r.ctx, client.ObjectKeyFromObject(crd), crd); client.IgnoreNotFound(err) != nil {
+		return err
+	}
+	if crd.UID != "" {
+		scc = StorageClassConfiguration{
+			storageClass: util.NewDefaultVirtRbdStorageClass(
+				instance.Namespace,
+				util.GenerateNameForCephBlockPool(instance.Name),
+				"rook-csi-rbd-provisioner",
+				"rook-csi-rbd-node",
+				instance.Namespace,
+				"",
+				"",
+				instance.Spec.ManagedResources.CephBlockPools.DefaultVirtualizationStorageClass,
+				util.If(
+					util.IsDefaultPoolErasureCodingEnabled(instance.Spec.ManagedResources.CephBlockPools),
+					util.GenerateNameForCephBlockPool(instance.Name),
+					"",
+				),
+			),
+			reconcileStrategy: ReconcileStrategy(instance.Spec.ManagedResources.CephBlockPools.ReconcileStrategy),
+			isClusterExternal: true,
+		}
+		scc.storageClass.Name = util.GenerateNameForCephBlockPoolVirtualizationStorageClass(instance)
+		if len(rbdSCParameters) > 0 {
+			for k, v := range rbdSCParameters {
+				scc.storageClass.Parameters[k] = v
+			}
+		}
+		availableSCCs = append(availableSCCs, scc)
+	} else {
+		scName := util.GenerateNameForCephBlockPoolVirtualizationStorageClass(instance)
+		existingSC := &storagev1.StorageClass{}
+		existingSC.Name = scName
+		if err := r.Delete(r.ctx, existingSC); client.IgnoreNotFound(err) != nil {
+			r.Log.Error(err, "Failed to delete Virtualization StorageClass ", scName)
+			return err
+		}
+	}
+
+	// creating the available storageClasses
 	err = r.createExternalModeStorageClasses(availableSCCs, instance.Namespace)
 	if err != nil {
 		r.Log.Error(err, "Failed to create needed StorageClasses.")
