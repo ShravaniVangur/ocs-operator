@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 
@@ -389,5 +391,94 @@ func TestNotify(t *testing.T) {
 				tt.validate(t, srv)
 			}
 		})
+	}
+}
+
+func TestFilterAlertsForConsumer(t *testing.T) {
+	// Complete test for filtering alerts: includes firing+matching, non-firing, wrong consumer, and missing consumer label
+	alertsResp := &prometheusAlertsResponse{
+		Status: "success",
+		Data: struct {
+			Alerts []prometheusAlert `json:"alerts"`
+		}{
+			Alerts: []prometheusAlert{
+				{Labels: map[string]string{"alertname": "FiringMatch", storageConsumerNameLabel: "test-consumer"}, State: "firing", Value: "85.5"},
+				{Labels: map[string]string{"alertname": "WrongConsumer", storageConsumerNameLabel: "other-consumer"}, State: "firing", Value: "95"},
+				{Labels: map[string]string{"alertname": "Pending", storageConsumerNameLabel: "test-consumer"}, State: "pending", Value: "1"},
+				{Labels: map[string]string{"alertname": "NoLabel"}, State: "firing", Value: "90"},
+				{Labels: map[string]string{"alertname": "FiringMatch2", storageConsumerNameLabel: "test-consumer"}, State: "firing", Value: "3"},
+			},
+		},
+	}
+
+	got := filterAlertsForConsumer(alertsResp, "test-consumer")
+
+	want := []*pb.AlertInfo{
+		{AlertName: "FiringMatch", Labels: map[string]string{"alertname": "FiringMatch", storageConsumerNameLabel: "test-consumer"}, Value: 85.5},
+		{AlertName: "FiringMatch2", Labels: map[string]string{"alertname": "FiringMatch2", storageConsumerNameLabel: "test-consumer"}, Value: 3},
+	}
+
+	if len(got) != len(want) {
+		t.Fatalf("expected %d alerts, got %d", len(want), len(got))
+	}
+	for i := range want {
+		if got[i].AlertName != want[i].AlertName {
+			t.Errorf("alert[%d].AlertName = %q, want %q", i, got[i].AlertName, want[i].AlertName)
+		}
+		if got[i].Value != want[i].Value {
+			t.Errorf("alert[%d].Value = %v, want %v", i, got[i].Value, want[i].Value)
+		}
+		if !reflect.DeepEqual(got[i].Labels, want[i].Labels) {
+			t.Errorf("alert[%d].Labels = %v, want %v", i, got[i].Labels, want[i].Labels)
+		}
+	}
+}
+
+func TestGetClientAlerts(t *testing.T) {
+	ctx := context.Background()
+	storageConsumer := &ocsv1a1.StorageConsumer{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-consumer",
+			Namespace: testNamespace,
+			UID:       "consumer-uid-123",
+		},
+	}
+	srv := newNotifyTestServer(t, storageConsumer)
+
+	// Fake Prometheus server returning a canned alerts response
+	promResponse := prometheusAlertsResponse{
+		Status: "success",
+		Data: struct {
+			Alerts []prometheusAlert `json:"alerts"`
+		}{
+			Alerts: []prometheusAlert{
+				{Labels: map[string]string{"alertname": "CephOSDNearFull", storageConsumerNameLabel: "test-consumer"}, State: "firing", Value: "85"},
+				{Labels: map[string]string{"alertname": "Filtered", storageConsumerNameLabel: "other-consumer"}, State: "firing", Value: "50"},
+			},
+		},
+	}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(promResponse)
+	}))
+	defer ts.Close()
+
+	srv.getPrometheusURLFunc = func(_ string) (string, error) { return ts.URL, nil }
+	srv.newPrometheusHTTPClientFunc = func(_ context.Context) (*http.Client, error) { return ts.Client(), nil }
+
+	resp, err := srv.GetClientAlerts(ctx, &pb.GetClientAlertsRequest{
+		StorageConsumerUUID: string(storageConsumer.UID),
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(resp.Alerts) != 1 {
+		t.Fatalf("expected 1 alert, got %d", len(resp.Alerts))
+	}
+	if resp.Alerts[0].AlertName != "CephOSDNearFull" {
+		t.Errorf("expected alert name %q, got %q", "CephOSDNearFull", resp.Alerts[0].AlertName)
+	}
+	if resp.Alerts[0].Value != 85 {
+		t.Errorf("expected alert value 85, got %v", resp.Alerts[0].Value)
 	}
 }
