@@ -14,7 +14,6 @@ import (
 
 	"github.com/blang/semver/v4"
 	"github.com/go-logr/logr"
-	groupsnapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	configv1 "github.com/openshift/api/config/v1"
 	conditionsv1 "github.com/openshift/custom-resource-status/conditions/v1"
 	"github.com/operator-framework/operator-lib/conditions"
@@ -282,9 +281,10 @@ func (r *StorageClusterReconciler) validateStorageClusterSpec(instance *ocsv1.St
 
 func (r *StorageClusterReconciler) reconcileDynamicWatches() error {
 
-	if err := r.reconcileCrdWatches(&groupsnapapi.VolumeGroupSnapshotClass{}, VolumeGroupSnapshotClassCrdName); err != nil {
-		return err
-	}
+	// FIXME:enable vgsc after GA of API
+	// if err := r.reconcileCrdWatches(&groupsnapapi.VolumeGroupSnapshotClass{}, VolumeGroupSnapshotClassCrdName); err != nil {
+	// 	return err
+	// }
 
 	if err := r.reconcileCrdWatches(&odfgsapiv1b1.VolumeGroupSnapshotClass{}, OdfVolumeGroupSnapshotClassCrdName); err != nil {
 		return err
@@ -527,7 +527,8 @@ func (r *StorageClusterReconciler) reconcilePhases(
 			&ocsExternalResources{},
 			&ocsStorageQuota{},
 			&ocsSnapshotClass{},
-			&ocsGroupSnapshotClass{},
+			// FIXME:enable vgsc after GA of API
+			// &ocsGroupSnapshotClass{},
 			&ocsOdfGroupSnapshotClass{},
 			&ocsNetworkFenceClass{},
 			&ocsNoobaaSystem{},

@@ -404,11 +404,12 @@ func (s *OCSProviderServer) GetDesiredClientState(ctx context.Context, req *pb.G
 			logger.Error(err, "failed to get volume snapshot class resource version")
 			return nil, status.Errorf(codes.Internal, "failed to produce client state")
 		}
-		vGSClassesResourceVersion, err := s.getVolumeGroupSnapshotClassesResourceVersion(ctx)
-		if err != nil {
-			logger.Error(err, "failed to get volume group snapshot class resource version")
-			return nil, status.Errorf(codes.Internal, "failed to produce client state")
-		}
+		// FIXME:enable vgsc after GA of API
+		// vGSClassesResourceVersion, err := s.getVolumeGroupSnapshotClassesResourceVersion(ctx)
+		// if err != nil {
+		// 	logger.Error(err, "failed to get volume group snapshot class resource version")
+		// 	return nil, status.Errorf(codes.Internal, "failed to produce client state")
+		// }
 		odfVGSClassesResourceVersion, err := s.getOdfVolumeGroupSnapshotClassesResourceVersion(ctx)
 		if err != nil {
 			logger.Error(err, "failed to get odf volume group class resource version")
@@ -436,7 +437,8 @@ func (s *OCSProviderServer) GetDesiredClientState(ctx context.Context, req *pb.G
 			availableServices.Nfs,
 			storageClassesResourceVersion,
 			vSClassesResourceVersion,
-			vGSClassesResourceVersion,
+			// FIXME:vgsc enable after GA of API
+			// vGSClassesResourceVersion,
 			odfVGSClassesResourceVersion,
 			useHostNetworkForCtrlPlugin,
 		)
@@ -702,11 +704,12 @@ func (s *OCSProviderServer) ReportStatus(ctx context.Context, req *pb.ReportStat
 		logger.Error(err, "failed to get volume snapshot class resource version")
 		return nil, status.Errorf(codes.Internal, "failed to produce client state")
 	}
-	vGSClassesResourceVersion, err := s.getVolumeGroupSnapshotClassesResourceVersion(ctx)
-	if err != nil {
-		logger.Error(err, "failed to get volume group snapshot class resource version")
-		return nil, status.Errorf(codes.Internal, "failed to produce client state")
-	}
+	// FIXME:enable vgsc after GA of API
+	// vGSClassesResourceVersion, err := s.getVolumeGroupSnapshotClassesResourceVersion(ctx)
+	// if err != nil {
+	// 	logger.Error(err, "failed to get volume group snapshot class resource version")
+	// 	return nil, status.Errorf(codes.Internal, "failed to produce client state")
+	// }
 	odfVGSClassesResourceVersion, err := s.getOdfVolumeGroupSnapshotClassesResourceVersion(ctx)
 	if err != nil {
 		logger.Error(err, "failed to get odf volume group class resource version")
@@ -733,7 +736,8 @@ func (s *OCSProviderServer) ReportStatus(ctx context.Context, req *pb.ReportStat
 		availableServices.Nfs,
 		storageClassesResourceVersion,
 		vSClassesResourceVersion,
-		vGSClassesResourceVersion,
+		// FIXME:vgsc enable after GA of API
+		// vGSClassesResourceVersion,
 		odfVGSClassesResourceVersion,
 		util.ShouldUseHostNetworking(storageCluster),
 		obcResourceVersions,
@@ -1349,19 +1353,21 @@ func (s *OCSProviderServer) getKubeResources(ctx context.Context, logger logr.Lo
 		return nil, err
 	}
 
-	kubeResources, err = s.appendVolumeGroupSnapshotClassKubeResources(
-		ctx,
-		logger,
-		kubeResources,
-		consumer,
-		consumerConfig,
-		storageCluster,
-		rbdStorageId,
-		cephFsStorageId,
-	)
-	if err != nil {
-		return nil, err
-	}
+	// FIXME:enable vgsc after GA of API
+	// disabling upstream volumegroupsnapshotclass until it is available upstream
+	// kubeResources, err = s.appendVolumeGroupSnapshotClassKubeResources(
+	// 	ctx,
+	// 	logger,
+	// 	kubeResources,
+	// 	consumer,
+	// 	consumerConfig,
+	// 	storageCluster,
+	// 	rbdStorageId,
+	// 	cephFsStorageId,
+	// )
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	kubeResources, err = s.appendOdfVolumeGroupSnapshotClassKubeResources(
 		ctx,
@@ -1929,69 +1935,70 @@ func (s *OCSProviderServer) appendVolumeSnapshotClassKubeResources(
 	return kubeResources, nil
 }
 
-func (s *OCSProviderServer) appendVolumeGroupSnapshotClassKubeResources(
-	ctx context.Context,
-	logger logr.Logger,
-	kubeResources []client.Object,
-	consumer *ocsv1alpha1.StorageConsumer,
-	consumerConfig util.StorageConsumerResources,
-	storageCluster *ocsv1.StorageCluster,
-	rbdStorageId,
-	cephFsStorageId string,
-) ([]client.Object, error) {
-	vgscMap := map[string]func() *groupsnapapi.VolumeGroupSnapshotClass{}
-	if consumerConfig.GetRbdClientProfileName() != "" {
-		vgscMap[util.GenerateNameForGroupSnapshotClass(storageCluster, util.RbdGroupSnapshotter)] = func() *groupsnapapi.VolumeGroupSnapshotClass {
-			return util.NewDefaultRbdGroupSnapshotClass(
-				consumerConfig.GetRbdClientProfileName(),
-				consumerConfig.GetCsiRbdProvisionerCephUserName(),
-				consumer.Status.Client.OperatorNamespace,
-				util.If(
-					util.IsDefaultPoolErasureCodingEnabled(storageCluster.Spec.ManagedResources.CephBlockPools),
-					storageCluster.Spec.ManagedResources.CephBlockPools.ErasureCodedMetadataPool,
-					util.GenerateNameForCephBlockPool(storageCluster.Name),
-				),
-				rbdStorageId,
-			)
-		}
-	}
-	if consumerConfig.GetCephFsClientProfileName() != "" {
-		vgscMap[util.GenerateNameForGroupSnapshotClass(storageCluster, util.CephfsGroupSnapshotter)] = func() *groupsnapapi.VolumeGroupSnapshotClass {
-			return util.NewDefaultCephFsGroupSnapshotClass(
-				consumerConfig.GetCephFsClientProfileName(),
-				consumerConfig.GetCsiCephFsProvisionerCephUserName(),
-				consumer.Status.Client.OperatorNamespace,
-				util.GenerateNameForCephFilesystem(storageCluster.Name),
-				cephFsStorageId,
-			)
-		}
-	}
+// FIXME:enable vgsc after GA of API
+// func (s *OCSProviderServer) appendVolumeGroupSnapshotClassKubeResources(
+// 	ctx context.Context,
+// 	logger logr.Logger,
+// 	kubeResources []client.Object,
+// 	consumer *ocsv1alpha1.StorageConsumer,
+// 	consumerConfig util.StorageConsumerResources,
+// 	storageCluster *ocsv1.StorageCluster,
+// 	rbdStorageId,
+// 	cephFsStorageId string,
+// ) ([]client.Object, error) {
+// 	vgscMap := map[string]func() *groupsnapapi.VolumeGroupSnapshotClass{}
+// 	if consumerConfig.GetRbdClientProfileName() != "" {
+// 		vgscMap[util.GenerateNameForGroupSnapshotClass(storageCluster, util.RbdGroupSnapshotter)] = func() *groupsnapapi.VolumeGroupSnapshotClass {
+// 			return util.NewDefaultRbdGroupSnapshotClass(
+// 				consumerConfig.GetRbdClientProfileName(),
+// 				consumerConfig.GetCsiRbdProvisionerCephUserName(),
+// 				consumer.Status.Client.OperatorNamespace,
+// 				util.If(
+// 					util.IsDefaultPoolErasureCodingEnabled(storageCluster.Spec.ManagedResources.CephBlockPools),
+// 					storageCluster.Spec.ManagedResources.CephBlockPools.ErasureCodedMetadataPool,
+// 					util.GenerateNameForCephBlockPool(storageCluster.Name),
+// 				),
+// 				rbdStorageId,
+// 			)
+// 		}
+// 	}
+// 	if consumerConfig.GetCephFsClientProfileName() != "" {
+// 		vgscMap[util.GenerateNameForGroupSnapshotClass(storageCluster, util.CephfsGroupSnapshotter)] = func() *groupsnapapi.VolumeGroupSnapshotClass {
+// 			return util.NewDefaultCephFsGroupSnapshotClass(
+// 				consumerConfig.GetCephFsClientProfileName(),
+// 				consumerConfig.GetCsiCephFsProvisionerCephUserName(),
+// 				consumer.Status.Client.OperatorNamespace,
+// 				util.GenerateNameForCephFilesystem(storageCluster.Name),
+// 				cephFsStorageId,
+// 			)
+// 		}
+// 	}
 
-	resources := getKubeResourcesForClass(
-		logger,
-		consumer.Spec.VolumeGroupSnapshotClasses,
-		"volumegroupsnapshotclass.groupsnapshot.storage.k8s.io",
-		func(vgscName string) (client.Object, error) {
-			if vgscGen, fnExist := vgscMap[vgscName]; fnExist {
-				return vgscGen(), nil
-			} else {
-				return util.VolumeGroupSnapshotClassFromExisting(
-					ctx,
-					s.client,
-					vgscName,
-					consumer,
-					consumerConfig,
-					rbdStorageId,
-					cephFsStorageId,
-					cephFsStorageId,
-				)
-			}
-		},
-	)
-	kubeResources = append(kubeResources, resources...)
+// 	resources := getKubeResourcesForClass(
+// 		logger,
+// 		consumer.Spec.VolumeGroupSnapshotClasses,
+// 		"volumegroupsnapshotclass.groupsnapshot.storage.k8s.io",
+// 		func(vgscName string) (client.Object, error) {
+// 			if vgscGen, fnExist := vgscMap[vgscName]; fnExist {
+// 				return vgscGen(), nil
+// 			} else {
+// 				return util.VolumeGroupSnapshotClassFromExisting(
+// 					ctx,
+// 					s.client,
+// 					vgscName,
+// 					consumer,
+// 					consumerConfig,
+// 					rbdStorageId,
+// 					cephFsStorageId,
+// 					cephFsStorageId,
+// 				)
+// 			}
+// 		},
+// 	)
+// 	kubeResources = append(kubeResources, resources...)
 
-	return kubeResources, nil
-}
+// 	return kubeResources, nil
+// }
 
 func (s *OCSProviderServer) appendOdfVolumeGroupSnapshotClassKubeResources(
 	ctx context.Context,
@@ -2343,18 +2350,19 @@ func (s *OCSProviderServer) getVolumeSnapshotClassesResourceVersion(ctx context.
 	})
 }
 
-func (s *OCSProviderServer) getVolumeGroupSnapshotClassesResourceVersion(ctx context.Context) ([]string, error) {
-	list := &groupsnapapi.VolumeGroupSnapshotClassList{}
-	return s.getResourceVersions(ctx, list, func() []string {
-		var versions []string
-		for i := range list.Items {
-			if slices.Contains(util.SupportedCsiDrivers, list.Items[i].Driver) {
-				versions = append(versions, list.Items[i].ResourceVersion)
-			}
-		}
-		return versions
-	})
-}
+// FIXME: enable vgsc after GA of API
+// func (s *OCSProviderServer) getVolumeGroupSnapshotClassesResourceVersion(ctx context.Context) ([]string, error) {
+// 	list := &groupsnapapi.VolumeGroupSnapshotClassList{}
+// 	return s.getResourceVersions(ctx, list, func() []string {
+// 		var versions []string
+// 		for i := range list.Items {
+// 			if slices.Contains(util.SupportedCsiDrivers, list.Items[i].Driver) {
+// 				versions = append(versions, list.Items[i].ResourceVersion)
+// 			}
+// 		}
+// 		return versions
+// 	})
+// }
 
 func (s *OCSProviderServer) getOdfVolumeGroupSnapshotClassesResourceVersion(ctx context.Context) ([]string, error) {
 	list := &odfgsapiv1b1.VolumeGroupSnapshotClassList{}

@@ -301,7 +301,8 @@ func (r *StorageClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	controller, err := build.Build(r)
 	r.controller = controller
 	r.cache = mgr.GetCache()
-	r.crdsBeingWatched.Store(VolumeGroupSnapshotClassCrdName, false)
+	// FIXME:enable vgsc after GA of API
+	// r.crdsBeingWatched.Store(VolumeGroupSnapshotClassCrdName, false)
 	r.crdsBeingWatched.Store(OdfVolumeGroupSnapshotClassCrdName, false)
 
 	return err
