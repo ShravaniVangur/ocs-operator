@@ -128,12 +128,7 @@ func (o *ocsCephBlockPools) reconcileCephMetadataBlockPool(r *StorageClusterReco
 		// Preserve the Mirroring spec, it's handled by the mirroring controller
 		existingMirroring := cephBlockPool.Spec.PoolSpec.Mirroring
 
-		// Pass the poolSpec from the storageCluster CR
-		if storageCluster.Spec.ManagedResources.CephBlockPools.PoolSpec != nil {
-			cephBlockPool.Spec.PoolSpec = *storageCluster.Spec.ManagedResources.CephBlockPools.PoolSpec
-		} else {
-			cephBlockPool.Spec.PoolSpec = cephv1.PoolSpec{}
-		}
+		cephBlockPool.Spec.PoolSpec = cephv1.PoolSpec{}
 
 		// Set default values in the poolSpec as necessary
 		setDefaultDataPoolSpec(&cephBlockPool.Spec.PoolSpec, storageCluster)

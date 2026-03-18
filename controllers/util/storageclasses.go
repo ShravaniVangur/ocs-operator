@@ -357,7 +357,7 @@ func NewDefaultCephFsStorageClass(
 	}
 
 	if dataPoolName != "" {
-		sc.Parameters["pool"] = dataPoolName
+		sc.Parameters["pool"] = fmt.Sprintf("%s-%s", fsName, dataPoolName)
 	}
 	return sc
 }
