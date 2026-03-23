@@ -468,9 +468,7 @@ func deployMetricsExporter(ctx context.Context, r *StorageClusterReconciler, ins
 								"--namespaces", instance.Namespace,
 								"--ceph-auth-namespace", r.OperatorNamespace,
 								"--alertmanager-url", alertManagerURL,
-								"--host", "127.0.0.1",
 								"--port", fmt.Sprintf("%d", metricsMainPort),
-								"--exporter-host", "127.0.0.1",
 								"--exporter-port", fmt.Sprintf("%d", metricsSelfPort),
 							}
 							if instance.Spec.ExternalStorage.Enable || r.IsNoobaaStandalone {

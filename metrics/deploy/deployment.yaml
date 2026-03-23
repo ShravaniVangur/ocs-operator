@@ -116,12 +116,8 @@ spec:
           - openshift-storage
           - '--ceph-auth-namespace'
           - openshift-storage
-          - '--host'
-          - 127.0.0.1
           - '--port'
           - "18080"
-          - '--exporter-host'
-          - 127.0.0.1
           - '--exporter-port'
           - "18081"
         securityContext:
