@@ -24,7 +24,7 @@ const (
 )
 
 var (
-	UnsupportedProvisioner = errors.New("unsupportedProvisioner")
+	ErrUnsupportedProvisioner = errors.New("unsupportedProvisioner")
 )
 
 func GenerateNameForCephBlockPoolStorageClass(storageCluster *ocsv1.StorageCluster) string {
@@ -85,6 +85,7 @@ func NewDefaultRbdStorageClass(
 	storageId,
 	remoteRbdStorageId string,
 	isDefaultStorageClass bool,
+	dataPoolName string,
 ) *storagev1.StorageClass {
 
 	sc := &storagev1.StorageClass{
@@ -111,6 +112,10 @@ func NewDefaultRbdStorageClass(
 			"csi.storage.k8s.io/node-stage-secret-namespace":        namespace,
 			"csi.storage.k8s.io/controller-expand-secret-namespace": namespace,
 		},
+	}
+
+	if dataPoolName != "" {
+		sc.Parameters["dataPool"] = dataPoolName
 	}
 
 	if isDefaultStorageClass {
@@ -147,6 +152,7 @@ func NewDefaultVirtRbdStorageClass(
 	storageId,
 	remoteRbdStorageId string,
 	isDefaultVirtStorageClass bool,
+	dataPoolName string,
 ) *storagev1.StorageClass {
 
 	sc := &storagev1.StorageClass{
@@ -175,6 +181,10 @@ func NewDefaultVirtRbdStorageClass(
 			"csi.storage.k8s.io/node-stage-secret-namespace":        namespace,
 			"csi.storage.k8s.io/controller-expand-secret-namespace": namespace,
 		},
+	}
+
+	if dataPoolName != "" {
+		sc.Parameters["dataPool"] = dataPoolName
 	}
 
 	if isDefaultVirtStorageClass {
@@ -210,6 +220,7 @@ func NewDefaultEncryptedRbdStorageClass(
 	namespace,
 	encryptionServiceName string,
 	KeyRotationAnnotationValue string,
+	dataPoolName string,
 ) *storagev1.StorageClass {
 
 	sc := &storagev1.StorageClass{
@@ -241,9 +252,15 @@ func NewDefaultEncryptedRbdStorageClass(
 			"csi.storage.k8s.io/controller-expand-secret-namespace": namespace,
 		},
 	}
+
+	if dataPoolName != "" {
+		sc.Parameters["dataPool"] = dataPoolName
+	}
+
 	if KeyRotationAnnotationValue != "" {
 		AddAnnotation(sc, defaults.KeyRotationEnableAnnotation, KeyRotationAnnotationValue)
 	}
+
 	return sc
 }
 
@@ -310,6 +327,7 @@ func NewDefaultCephFsStorageClass(
 	nodeSecret,
 	namespace,
 	storageId string,
+	dataPoolName string,
 ) *storagev1.StorageClass {
 
 	sc := &storagev1.StorageClass{
@@ -336,6 +354,10 @@ func NewDefaultCephFsStorageClass(
 
 	if storageId != "" {
 		AddLabel(sc, storageIdLabelKey, storageId)
+	}
+
+	if dataPoolName != "" {
+		sc.Parameters["pool"] = fmt.Sprintf("%s-%s", fsName, dataPoolName)
 	}
 	return sc
 }
@@ -420,6 +442,12 @@ func StorageClassFromExisting(
 	replicationID := ""
 	groupReplicationID := ""
 	operatorNamespace := consumer.Status.Client.OperatorNamespace
+	// assumption that noobaa is deployed on the same namespace as ocs operator.
+	ocsOperatorNamespace, err := GetOperatorNamespace()
+	if err != nil {
+		return nil, err
+	}
+	NoobaaProvisionerName := ocsOperatorNamespace + NoobaaProvisionerNameSuffix
 	switch storageClass.Provisioner {
 	case RbdDriverName:
 		clientProfileName = consumerConfig.GetRbdClientProfileName()
@@ -448,8 +476,10 @@ func StorageClassFromExisting(
 		provisionerSecretName = consumerConfig.GetCsiNfsProvisionerCephUserName()
 		nodeSecretName = consumerConfig.GetCsiNfsNodeCephUserName()
 		storageId = nfsStorageId
+	case NoobaaProvisionerName:
+		return storageClass, nil
 	default:
-		return nil, UnsupportedProvisioner
+		return nil, ErrUnsupportedProvisioner
 	}
 
 	params := storageClass.Parameters

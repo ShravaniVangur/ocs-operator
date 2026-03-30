@@ -1,0 +1,48 @@
+apiVersion: ocs.openshift.io/v1
+kind: StorageCluster
+metadata:
+  name: ocs-storagecluster
+  namespace: openshift-storage
+spec:
+  managedResources:
+    cephBlockPools:
+      poolSpec:
+        erasureCoded:
+          codingChunks: 1
+          dataChunks: 2
+      erasureCodedMetadataPool: replicated-metadata-pool
+    cephFilesystems:
+      additionalDataPools:
+        - name: fserasurecoded
+          erasureCoded:
+            dataChunks: 2  # replace your k value
+            codingChunks: 1 # replace your m value
+      defaultStorageClassDataPoolName: fserasurecoded
+    cephObjectStores:
+      dataPoolSpec:
+        erasureCoded:
+          codingChunks: 1
+          dataChunks: 2
+  monPVCTemplate:
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: "10Gi"
+      storageClassName: gp3-csi
+      volumeMode: Filesystem
+  storageDeviceSets:
+    - name: gp3-csi
+      dataPVCTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: "256Gi"
+          storageClassName: gp3-csi
+          volumeMode: Block
+      count: 1
+      replica: 3
+      portable: true

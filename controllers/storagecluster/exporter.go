@@ -28,6 +28,8 @@ const (
 	metricsExporterName     = "ocs-metrics-exporter"
 	prometheusRoleName      = "ocs-metrics-svc"
 	metricsExporterRoleName = metricsExporterName
+	metricsMainPort         = 18080
+	metricsSelfPort         = 18081
 	portMetricsMain         = "https-main"
 	portMetricsSelf         = "https-self"
 	metricsPath             = "/metrics"
@@ -95,17 +97,18 @@ func (r *StorageClusterReconciler) enableMetricsExporter(
 		return err
 	}
 
+	// start the exporter service
+	_, err := createMetricsExporterService(ctx, r, instance)
+	if err != nil {
+		return err
+	}
+
 	// create the metrics exporter deployment
 	if err := deployMetricsExporter(ctx, r, instance); err != nil {
 		r.Log.Error(err, "failed to create ocs-metric-exporter deployment")
 		return err
 	}
 
-	// start the exporter service
-	_, err := createMetricsExporterService(ctx, r, instance)
-	if err != nil {
-		return err
-	}
 	// add the servicemonitor
 	_, err = createMetricsExporterServiceMonitor(ctx, r, instance)
 	if err != nil {
@@ -183,10 +186,10 @@ func createMetricsExporterService(ctx context.Context, r *StorageClusterReconcil
 	r.Log.Info("Reconciling metrics exporter service", "NamespacedName", namespacedName)
 
 	oldService := &corev1.Service{}
-	err := r.Client.Get(ctx, namespacedName, oldService)
+	err := r.Get(ctx, namespacedName, oldService)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			err = r.Client.Create(ctx, service)
+			err = r.Create(ctx, service)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create metrics exporter service %v. %v", namespacedName, err)
 			}
@@ -196,7 +199,7 @@ func createMetricsExporterService(ctx context.Context, r *StorageClusterReconcil
 	}
 	service.ResourceVersion = oldService.ResourceVersion
 	service.Spec.ClusterIP = oldService.Spec.ClusterIP
-	err = r.Client.Update(ctx, service)
+	err = r.Update(ctx, service)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update service %v. %v", namespacedName, err)
 	}
@@ -307,10 +310,10 @@ func createMetricsExporterServiceMonitor(ctx context.Context, r *StorageClusterR
 	r.Log.Info("Reconciling metrics exporter service monitor", "NamespacedName", namespacedName)
 
 	oldSm := &monitoringv1.ServiceMonitor{}
-	err = r.Client.Get(ctx, namespacedName, oldSm)
+	err = r.Get(ctx, namespacedName, oldSm)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			err = r.Client.Create(ctx, serviceMonitor)
+			err = r.Create(ctx, serviceMonitor)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create metrics exporter servicemonitor %v. %v", namespacedName, err)
 			}
@@ -325,7 +328,7 @@ func createMetricsExporterServiceMonitor(ctx context.Context, r *StorageClusterR
 		return nil, err
 	}
 
-	err = r.Client.Update(ctx, oldSm)
+	err = r.Update(ctx, oldSm)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update metrics exporter servicemonitor %v. %v", namespacedName, err)
 	}
@@ -342,7 +345,7 @@ func deployMetricsExporter(ctx context.Context, r *StorageClusterReconciler, ins
 		},
 	}
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, currentDep, func() error {
-		if currentDep.ObjectMeta.CreationTimestamp.IsZero() {
+		if currentDep.CreationTimestamp.IsZero() {
 			// Selector is immutable. Inject it only while creating new object.
 			currentDep.Spec.Selector = &metav1.LabelSelector{
 				MatchLabels: exporterLabels,
@@ -400,7 +403,7 @@ func deployMetricsExporter(ctx context.Context, r *StorageClusterReconciler, ins
 						Image: r.images.KubeRBACProxy,
 						Args: []string{
 							"--secure-listen-address", "0.0.0.0:8443",
-							"--upstream", "http://127.0.0.1:8080/",
+							"--upstream", fmt.Sprintf("http://127.0.0.1:%d/", metricsMainPort),
 							"--tls-cert-file", "/etc/tls/private/tls.crt",
 							"--tls-private-key-file", "/etc/tls/private/tls.key",
 							"--tls-cipher-suites", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305",
@@ -439,7 +442,7 @@ func deployMetricsExporter(ctx context.Context, r *StorageClusterReconciler, ins
 						Image: r.images.KubeRBACProxy,
 						Args: []string{
 							"--secure-listen-address", "0.0.0.0:9443",
-							"--upstream", "http://127.0.0.1:8081/",
+							"--upstream", fmt.Sprintf("http://127.0.0.1:%d/", metricsSelfPort),
 							"--tls-cert-file", "/etc/tls/private/tls.crt",
 							"--tls-private-key-file", "/etc/tls/private/tls.key",
 							"--tls-cipher-suites", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305",
@@ -460,11 +463,19 @@ func deployMetricsExporter(ctx context.Context, r *StorageClusterReconciler, ins
 						},
 					},
 					{
-						Args: []string{
-							"--namespaces", instance.Namespace,
-							"--ceph-auth-namespace", r.OperatorNamespace,
-							"--alertmanager-url", alertManagerURL,
-						},
+						Args: func() []string {
+							args := []string{
+								"--namespaces", instance.Namespace,
+								"--ceph-auth-namespace", r.OperatorNamespace,
+								"--alertmanager-url", alertManagerURL,
+								"--port", fmt.Sprintf("%d", metricsMainPort),
+								"--exporter-port", fmt.Sprintf("%d", metricsSelfPort),
+							}
+							if instance.Spec.ExternalStorage.Enable || r.IsNoobaaStandalone {
+								args = append(args, "--no-ceph")
+							}
+							return args
+						}(),
 						Command: []string{"/usr/local/bin/metrics-exporter"},
 						Image:   r.images.OCSMetricsExporter,
 						Name:    metricsExporterName,
@@ -472,7 +483,7 @@ func deployMetricsExporter(ctx context.Context, r *StorageClusterReconciler, ins
 							ProbeHandler: corev1.ProbeHandler{
 								HTTPGet: &corev1.HTTPGetAction{
 									Path:   "/healthz",
-									Port:   intstr.FromInt32(8080),
+									Port:   intstr.FromInt32(metricsMainPort),
 									Scheme: corev1.URISchemeHTTP,
 								},
 							},
@@ -482,7 +493,7 @@ func deployMetricsExporter(ctx context.Context, r *StorageClusterReconciler, ins
 							ProbeHandler: corev1.ProbeHandler{
 								HTTPGet: &corev1.HTTPGetAction{
 									Path:   "/healthz",
-									Port:   intstr.FromInt32(8080),
+									Port:   intstr.FromInt32(metricsMainPort),
 									Scheme: corev1.URISchemeHTTP,
 								},
 							},
@@ -574,23 +585,23 @@ func createMetricsExporterServiceAccount(ctx context.Context, r *StorageClusterR
 	// We only care about the existence of this ServiceAccount and presence of correct Labels and OwnerReferences in it.
 	// We do not want to reset/remove Secret references or ImagePullSecret references set by the system controllers.
 	currentServiceAccount := &corev1.ServiceAccount{}
-	err := r.Client.Get(ctx, types.NamespacedName{Namespace: instance.Namespace, Name: metricsExporterName}, currentServiceAccount)
+	err := r.Get(ctx, types.NamespacedName{Namespace: instance.Namespace, Name: metricsExporterName}, currentServiceAccount)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			err = r.Client.Create(ctx, expectedServiceAccount)
+			err = r.Create(ctx, expectedServiceAccount)
 			return err
 		}
 		return err
 	}
 	// If ServiceAccount exists and Labels and OwnerReferences are correct, we don't need to update anything.
-	if equality.Semantic.DeepEqual(expectedServiceAccount.ObjectMeta.Labels, currentServiceAccount.ObjectMeta.Labels) &&
-		equality.Semantic.DeepEqual(expectedServiceAccount.ObjectMeta.OwnerReferences, currentServiceAccount.ObjectMeta.OwnerReferences) {
+	if equality.Semantic.DeepEqual(expectedServiceAccount.Labels, currentServiceAccount.Labels) &&
+		equality.Semantic.DeepEqual(expectedServiceAccount.OwnerReferences, currentServiceAccount.OwnerReferences) {
 		return nil
 	}
 	// If ServiceAccount exists but Labels and/or OwnerReferences are incorrect, we need to update it.
-	currentServiceAccount.ObjectMeta.Labels = expectedServiceAccount.ObjectMeta.Labels
-	currentServiceAccount.ObjectMeta.OwnerReferences = expectedServiceAccount.ObjectMeta.OwnerReferences
-	err = r.Client.Update(ctx, currentServiceAccount)
+currentServiceAccount.Labels = expectedServiceAccount.Labels
+		currentServiceAccount.OwnerReferences = expectedServiceAccount.OwnerReferences
+	err = r.Update(ctx, currentServiceAccount)
 	return err
 }
 
@@ -1122,7 +1133,7 @@ func (r *StorageClusterReconciler) deleteMetricsExporterCephClient(namespace str
 	cephClient.Name = util.OcsMetricsExporterCephClientName
 	cephClient.Namespace = namespace
 
-	if err := r.Client.Delete(r.ctx, cephClient); err != nil {
+	if err := r.Delete(r.ctx, cephClient); err != nil {
 		if apierrors.IsNotFound(err) {
 			// If the CephClient does not exist, we can safely return nil.
 			return nil

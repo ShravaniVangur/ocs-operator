@@ -8,24 +8,26 @@ import (
 	"net"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	ocsv1 "github.com/red-hat-storage/ocs-operator/api/v4/v1"
-	"github.com/red-hat-storage/ocs-operator/v4/controllers/defaults"
 	"github.com/red-hat-storage/ocs-operator/v4/controllers/util"
 
 	"github.com/go-logr/logr"
 	cephv1 "github.com/rook/rook/pkg/apis/ceph.rook.io/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -79,7 +81,7 @@ func checkEndpointReachable(endpoint string, timeout time.Duration) error {
 	if err != nil {
 		return err
 	}
-	defer con.Close()
+	defer func() { _ = con.Close() }()
 	return nil
 }
 
@@ -94,7 +96,7 @@ func findNamedResourceFromArray(extArr []ExternalResource, name string) (Externa
 			return extR, nil
 		}
 	}
-	return ExternalResource{}, fmt.Errorf("Unable to retrieve %q external resource", name)
+	return ExternalResource{}, fmt.Errorf("unable to retrieve %q external resource", name)
 }
 
 // retrieveSecret function retrieves the secret object with the specified name
@@ -105,7 +107,7 @@ func (r *StorageClusterReconciler) retrieveSecret(secretName string, instance *o
 			Namespace: instance.Namespace,
 		},
 	}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: found.Name, Namespace: found.Namespace}, found)
+	err := r.Get(context.TODO(), types.NamespacedName{Name: found.Name, Namespace: found.Namespace}, found)
 	return found, err
 }
 
@@ -120,7 +122,7 @@ func (r *StorageClusterReconciler) deleteSecret(instance *ocsv1.StorageCluster) 
 		r.Log.Error(err, "Error while retrieving external rhcs mode secret.")
 		return err
 	}
-	return r.Client.Delete(context.TODO(), found)
+	return r.Delete(context.TODO(), found)
 }
 
 // retrieveExternalSecretData function retrieves the external secret and returns the data it contains
@@ -149,7 +151,7 @@ func newExternalGatewaySpec(rgwEndpoint string, reqLogger logr.Logger, tlsEnable
 		return nil, err
 	}
 	if hostIP == "" {
-		err := fmt.Errorf("An empty rgw host 'IP' address found")
+		err := fmt.Errorf("an empty rgw host 'IP' address found")
 		reqLogger.Error(err, "Host IP should not be empty in rgw endpoint")
 		return nil, err
 	}
@@ -254,12 +256,25 @@ func (r *StorageClusterReconciler) createExternalStorageClusterResources(instanc
 		Kind:       instance.Kind,
 		Name:       instance.Name,
 	}
-	// this stores only the StorageClasses specified in the Secret
+
 	availableSCCs := []StorageClassConfiguration{}
+	rbdSCParameters := map[string]string{}
+
+	var fsid string
+	if cephCluster, err := util.GetCephClusterInNamespace(r.ctx, r.Client, instance.Namespace); err != nil {
+		return err
+	} else if cephCluster.Status.CephStatus == nil || cephCluster.Status.CephStatus.FSID == "" {
+		return fmt.Errorf("waiting for Ceph FSID")
+	} else {
+		fsid = cephCluster.Status.CephStatus.FSID
+	}
+
+	rbdStorageID := util.CalculateCephRbdStorageID(fsid, getExternalModeRadosNamespaceName(instance))
+	cephFsStorageID := util.CalculateCephFsStorageID(fsid, "csi")
 
 	data, ok := externalOCSResources[instance.UID]
 	if !ok {
-		return fmt.Errorf("Unable to retrieve external resource from externalOCSResources")
+		return fmt.Errorf("unable to retrieve external resource from externalOCSResources")
 	}
 
 	var extCephObjectStores []*cephv1.CephObjectStore
@@ -342,6 +357,7 @@ func (r *StorageClusterReconciler) createExternalStorageClusterResources(instanc
 						"rook-csi-cephfs-provisioner",
 						"rook-csi-cephfs-node",
 						instance.Namespace,
+						cephFsStorageID,
 						"",
 					),
 					reconcileStrategy: ReconcileStrategy(scManagedResources.CephFilesystems.ReconcileStrategy),
@@ -352,13 +368,22 @@ func (r *StorageClusterReconciler) createExternalStorageClusterResources(instanc
 				scc = StorageClassConfiguration{
 					storageClass: util.NewDefaultRbdStorageClass(
 						instance.Namespace,
-						util.GenerateNameForCephBlockPool(instance.Name),
+						util.If(
+							util.IsDefaultPoolErasureCodingEnabled(instance.Spec.ManagedResources.CephBlockPools),
+							instance.Spec.ManagedResources.CephBlockPools.ErasureCodedMetadataPool,
+							util.GenerateNameForCephBlockPool(instance.Name),
+						),
 						"rook-csi-rbd-provisioner",
 						"rook-csi-rbd-node",
 						instance.Namespace,
+						rbdStorageID,
 						"",
-						"",
-						scManagedResources.CephBlockPools.DefaultStorageClass,
+						instance.Spec.ManagedResources.CephBlockPools.DefaultStorageClass,
+						util.If(
+							util.IsDefaultPoolErasureCodingEnabled(instance.Spec.ManagedResources.CephBlockPools),
+							util.GenerateNameForCephBlockPool(instance.Name),
+							"",
+						),
 					),
 					reconcileStrategy: ReconcileStrategy(scManagedResources.CephBlockPools.ReconcileStrategy),
 					isClusterExternal: true,
@@ -372,9 +397,10 @@ func (r *StorageClusterReconciler) createExternalStorageClusterResources(instanc
 						"rook-csi-rbd-provisioner",
 						"rook-csi-rbd-node",
 						instance.Namespace,
-						"",
+						rbdStorageID,
 						"",
 						scManagedResources.CephBlockPools.DefaultStorageClass,
+						"",
 					),
 					reconcileStrategy: ReconcileStrategy(scManagedResources.CephBlockPools.ReconcileStrategy),
 					isClusterExternal: true,
@@ -399,7 +425,7 @@ func (r *StorageClusterReconciler) createExternalStorageClusterResources(instanc
 						"rook-csi-rbd-provisioner",
 						"rook-csi-rbd-node",
 						instance.Namespace,
-						"",
+						rbdStorageID,
 						"",
 					),
 					isClusterExternal: true,
@@ -438,6 +464,9 @@ func (r *StorageClusterReconciler) createExternalStorageClusterResources(instanc
 			for k, v := range d.Data {
 				scc.storageClass.Parameters[k] = v
 			}
+			if d.Name == cephRbdStorageClassName {
+				maps.Copy(rbdSCParameters, scc.storageClass.Parameters)
+			}
 			// add external mode label to storageclass
 			util.AddLabel(scc.storageClass, util.ExternalClassLabelKey, strconv.FormatBool(true))
 			availableSCCs = append(availableSCCs, scc)
@@ -450,7 +479,46 @@ func (r *StorageClusterReconciler) createExternalStorageClusterResources(instanc
 		return err
 	}
 
-	// creating only the available storageClasses
+	// create virtualization storageclass if VirtualMachineCRD is present
+	var scc StorageClassConfiguration
+	crd := &metav1.PartialObjectMetadata{}
+	crd.SetGroupVersionKind(extv1.SchemeGroupVersion.WithKind("CustomResourceDefinition"))
+	crd.Name = VirtualMachineCrdName
+	if err := r.Get(r.ctx, client.ObjectKeyFromObject(crd), crd); client.IgnoreNotFound(err) != nil {
+		return err
+	}
+	if crd.UID != "" {
+		scc = StorageClassConfiguration{
+			storageClass: util.NewDefaultVirtRbdStorageClass(
+				instance.Namespace,
+				util.If(
+					util.IsDefaultPoolErasureCodingEnabled(instance.Spec.ManagedResources.CephBlockPools),
+					instance.Spec.ManagedResources.CephBlockPools.ErasureCodedMetadataPool,
+					util.GenerateNameForCephBlockPool(instance.Name),
+				),
+				"rook-csi-rbd-provisioner",
+				"rook-csi-rbd-node",
+				instance.Namespace,
+				rbdStorageID,
+				"",
+				instance.Spec.ManagedResources.CephBlockPools.DefaultVirtualizationStorageClass,
+				util.If(
+					util.IsDefaultPoolErasureCodingEnabled(instance.Spec.ManagedResources.CephBlockPools),
+					util.GenerateNameForCephBlockPool(instance.Name),
+					"",
+				),
+			),
+			reconcileStrategy: ReconcileStrategy(instance.Spec.ManagedResources.CephBlockPools.ReconcileStrategy),
+			isClusterExternal: true,
+		}
+		scc.storageClass.Name = util.GenerateNameForCephBlockPoolVirtualizationStorageClass(instance)
+		if len(rbdSCParameters) > 0 {
+			maps.Copy(scc.storageClass.Parameters, rbdSCParameters)
+		}
+		availableSCCs = append(availableSCCs, scc)
+	}
+
+	// creating the available storageClasses
 	err = r.createExternalModeStorageClasses(availableSCCs, instance.Namespace)
 	if err != nil {
 		r.Log.Error(err, "Failed to create needed StorageClasses.")
@@ -494,7 +562,7 @@ func (r *StorageClusterReconciler) createExternalModeStorageClasses(sccs []Stora
 			}
 			radosNamespace := cephv1.CephBlockPoolRadosNamespace{}
 			key := types.NamespacedName{Name: radosNamespaceName, Namespace: namespace}
-			err := r.Client.Get(context.TODO(), key, &radosNamespace)
+			err := r.Get(context.TODO(), key, &radosNamespace)
 			if err != nil || radosNamespace.Status == nil || radosNamespace.Status.Phase != cephv1.ConditionType(util.PhaseReady) || radosNamespace.Status.Info["clusterID"] == "" {
 				r.Log.Info("Waiting for radosNamespace to be Ready. Skip reconciling StorageClass",
 					"radosNamespace", klog.KRef(key.Namespace, key.Name),
@@ -508,7 +576,7 @@ func (r *StorageClusterReconciler) createExternalModeStorageClasses(sccs []Stora
 			// wait for CephNFS to be ready
 			cephNFS := cephv1.CephNFS{}
 			key := types.NamespacedName{Name: sc.Parameters["nfsCluster"], Namespace: namespace}
-			err := r.Client.Get(context.TODO(), key, &cephNFS)
+			err := r.Get(context.TODO(), key, &cephNFS)
 			if err != nil || cephNFS.Status == nil || cephNFS.Status.Phase != util.PhaseReady {
 				r.Log.Info("Waiting for CephNFS to be Ready. Skip reconciling StorageClass",
 					"CephNFS", klog.KRef(key.Namespace, key.Name),
@@ -519,56 +587,43 @@ func (r *StorageClusterReconciler) createExternalModeStorageClasses(sccs []Stora
 			}
 		}
 
-		scRecreated := false
 		existing := &storagev1.StorageClass{}
-		err := r.Client.Get(context.TODO(), types.NamespacedName{Name: sc.Name, Namespace: sc.Namespace}, existing)
+		existing.Name = sc.Name
+		_, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, existing, func() error {
+			// If found and reconcileStrategy is init we skip
+			if existing.UID != "" && scc.reconcileStrategy == ReconcileStrategyInit {
+				return nil
+			}
+			if len(existing.Labels) == 0 {
+				existing.Labels = map[string]string{}
+			}
+			if len(existing.Annotations) == 0 {
+				existing.Annotations = map[string]string{}
+			}
+			maps.Copy(existing.Labels, sc.Labels)
+			maps.Copy(existing.Annotations, sc.Annotations)
 
-		if errors.IsNotFound(err) {
-			// Since the StorageClass is not found, we will create a new one
-			r.Log.Info("Creating StorageClass.", "StorageClass", klog.KRef(sc.Namespace, existing.Name))
-			err = r.Client.Create(context.TODO(), sc)
-			if err != nil {
-				return err
+			existing.AllowVolumeExpansion = sc.AllowVolumeExpansion
+			existing.Parameters = sc.Parameters
+			existing.Provisioner = sc.Provisioner
+			existing.ReclaimPolicy = sc.ReclaimPolicy
+			existing.VolumeBindingMode = sc.VolumeBindingMode
+			return nil
+		})
+		if util.IsForbiddenError(err) {
+			if err := r.Delete(r.ctx, existing); client.IgnoreNotFound(err) != nil {
+				return fmt.Errorf("failed to replace StorageClass %v: %v", existing.GetName(), err)
+			}
+
+			// k8s doesn't allow us to create objects when resourceVersion is set, as we are DeepCopying the
+			// object, the resource version also gets copied, hence we need to set it to empty before creating it
+			existing.SetResourceVersion("")
+			if err := r.Create(r.ctx, existing); err != nil {
+				return fmt.Errorf("failed to replace StorageClass %v: %v", existing.GetName(), err)
 			}
 		} else if err != nil {
-			return err
-		} else {
-			if scc.reconcileStrategy == ReconcileStrategyInit {
-				continue
-			}
-			if existing.DeletionTimestamp != nil {
-				return fmt.Errorf("failed to restore StorageClass  %s because it is marked for deletion", existing.Name)
-			}
-			if !reflect.DeepEqual(sc.Parameters, existing.Parameters) || existing.Labels[util.ExternalClassLabelKey] != sc.Labels[util.ExternalClassLabelKey] {
-				// Since we have to update the existing StorageClass
-				// So, we will delete the existing storageclass and create a new one
-				r.Log.Info("StorageClass needs to be updated, deleting it.", "StorageClass", klog.KRef(sc.Namespace, existing.Name))
-				err = r.Client.Delete(context.TODO(), existing)
-				if err != nil {
-					r.Log.Error(err, "Failed to delete StorageClass.", "StorageClass", klog.KRef(sc.Namespace, existing.Name))
-					return err
-				}
-				r.Log.Info("Creating StorageClass.", "StorageClass", klog.KRef(sc.Namespace, sc.Name))
-				err = r.Client.Create(context.TODO(), sc)
-				if err != nil {
-					r.Log.Info("Failed to create StorageClass.", "StorageClass", klog.KRef(sc.Namespace, sc.Name))
-					return err
-				}
-				scRecreated = true
-			}
-			if !scRecreated {
-				// Delete existing key rotation annotation and set it on sc only when it is false
-				delete(existing.Annotations, defaults.KeyRotationEnableAnnotation)
-				if krState := sc.GetAnnotations()[defaults.KeyRotationEnableAnnotation]; krState == "false" {
-					util.AddAnnotation(existing, defaults.KeyRotationEnableAnnotation, krState)
-				}
-
-				err = r.Client.Update(context.TODO(), existing)
-				if err != nil {
-					r.Log.Error(err, "Failed to update annotations on the StorageClass.", "StorageClass", klog.KRef(sc.Namespace, existing.Name))
-					return err
-				}
-			}
+			return fmt.Errorf(
+				"failed to create or update StorageClass %v: %v", existing.GetName(), err)
 		}
 	}
 	if len(skippedSC) > 0 {
@@ -581,7 +636,7 @@ func verifyMonitoringEndpoints(monitoringIP, monitoringPort string,
 	log logr.Logger) (err error) {
 	if monitoringIP == "" {
 		err = fmt.Errorf(
-			"Monitoring Endpoint not present in the external cluster secret %s",
+			"monitoring endpoint not present in the external cluster secret %s",
 			externalClusterDetailsSecret)
 		log.Error(err, "Failed to get Monitoring IP.")
 		return
@@ -608,11 +663,11 @@ func verifyMonitoringEndpoints(monitoringIP, monitoringPort string,
 
 // createExternalStorageClusterConfigMap creates configmap for external cluster
 func (r *StorageClusterReconciler) createExternalStorageClusterConfigMap(cm *corev1.ConfigMap, found *corev1.ConfigMap, objectKey types.NamespacedName) error {
-	err := r.Client.Get(context.TODO(), objectKey, found)
+	err := r.Get(context.TODO(), objectKey, found)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			r.Log.Info("Creating External StorageCluster ConfigMap.", "ConfigMap", klog.KRef(objectKey.Namespace, cm.Name))
-			err = r.Client.Create(context.TODO(), cm)
+			err = r.Create(context.TODO(), cm)
 			if err != nil {
 				r.Log.Error(err, "Creation of External StorageCluster ConfigMap failed.", "ConfigMap", klog.KRef(objectKey.Namespace, cm.Name))
 			}
@@ -623,9 +678,9 @@ func (r *StorageClusterReconciler) createExternalStorageClusterConfigMap(cm *cor
 	}
 	// update the found ConfigMap's Data with the latest changes,
 	// if they don't match
-	if cm.ObjectMeta.Name != monEndpointConfigMapName && !reflect.DeepEqual(found.Data, cm.Data) {
+	if cm.Name != monEndpointConfigMapName && !reflect.DeepEqual(found.Data, cm.Data) {
 		found.Data = cm.DeepCopy().Data
-		if err = r.Client.Update(context.TODO(), found); err != nil {
+		if err = r.Update(context.TODO(), found); err != nil {
 			return err
 		}
 	}
@@ -634,11 +689,11 @@ func (r *StorageClusterReconciler) createExternalStorageClusterConfigMap(cm *cor
 
 // createExternalStorageClusterSecret creates secret for external cluster
 func (r *StorageClusterReconciler) createExternalStorageClusterSecret(sec *corev1.Secret, found *corev1.Secret, objectKey types.NamespacedName) error {
-	err := r.Client.Get(context.TODO(), objectKey, found)
+	err := r.Get(context.TODO(), objectKey, found)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			r.Log.Info("Creating External StorageCluster Secret.", "Secret", klog.KRef(objectKey.Namespace, sec.Name))
-			err = r.Client.Create(context.TODO(), sec)
+			err = r.Create(context.TODO(), sec)
 			if err != nil {
 				r.Log.Error(err, "Creation of External StorageCluster Secret failed.", "Secret", klog.KRef(objectKey.Namespace, sec.Name))
 			}
@@ -651,7 +706,7 @@ func (r *StorageClusterReconciler) createExternalStorageClusterSecret(sec *corev
 	// if they don't match
 	if !reflect.DeepEqual(found.Data, sec.Data) {
 		found.Data = sec.DeepCopy().Data
-		if err = r.Client.Update(context.TODO(), found); err != nil {
+		if err = r.Update(context.TODO(), found); err != nil {
 			return err
 		}
 	}
@@ -748,7 +803,7 @@ func (r *StorageClusterReconciler) configureCsiDrivers(availableSCCs []StorageCl
 	clientConfig.Name = ocsClientConfigMapName
 	clientConfig.Namespace = r.OperatorNamespace
 
-	if err := r.Client.Get(r.ctx, client.ObjectKeyFromObject(clientConfig), clientConfig); err != nil {
+	if err := r.Get(r.ctx, client.ObjectKeyFromObject(clientConfig), clientConfig); err != nil {
 		r.Log.Error(err, "failed to get ocs client operator configmap", "configmap", klog.KRef(clientConfig.Namespace, clientConfig.Name))
 		return err
 	}
@@ -783,10 +838,22 @@ func (r *StorageClusterReconciler) configureCsiDrivers(availableSCCs []StorageCl
 	}
 
 	if !maps.Equal(clientConfig.Data, existingData) {
-		if err := r.Client.Update(r.ctx, clientConfig); err != nil {
+		if err := r.Update(r.ctx, clientConfig); err != nil {
 			r.Log.Error(err, "failed to update client operator's configmap data", "configmap", klog.KRef(clientConfig.Namespace, clientConfig.Name))
 			return err
 		}
 	}
 	return nil
+}
+
+func getExternalModeRadosNamespaceName(storageCluster *ocsv1.StorageCluster) string {
+	resources := externalOCSResources[storageCluster.UID]
+	idx := slices.IndexFunc(resources, func(resource ExternalResource) bool {
+		return resource.Kind == "CephBlockPoolRadosNamespace"
+	})
+	if idx == -1 {
+		// empty string is also a valid value it represents the implicit/default radosnamespace
+		return ""
+	}
+	return resources[idx].Data["radosNamespaceName"]
 }

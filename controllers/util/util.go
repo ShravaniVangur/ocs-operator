@@ -10,6 +10,7 @@ import (
 
 	ocsv1 "github.com/red-hat-storage/ocs-operator/api/v4/v1"
 
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
@@ -107,6 +108,14 @@ func AddLabel(obj metav1.Object, key string, value string) bool {
 	return false
 }
 
+func CalculateCephRbdStorageID(cephfsid, radosnamespacename string) string {
+	return CalculateMD5Hash([2]string{cephfsid, radosnamespacename})
+}
+
+func CalculateCephFsStorageID(cephfsid, subVolumeGroupName string) string {
+	return CalculateMD5Hash([2]string{cephfsid, subVolumeGroupName})
+}
+
 func CalculateMD5Hash(value any) string {
 	data, err := json.Marshal(value)
 	if err != nil {
@@ -169,12 +178,41 @@ func GetExternalClassesBlacklistSelector() labels.Selector {
 
 // GetFullTopologyLabel converts short topology failure domain names to full Kubernetes label names
 func GetFullTopologyLabel(failuredomain string) string {
-	if failuredomain == "zone" {
+	switch failuredomain {
+	case "zone":
 		return "topology.kubernetes.io/zone"
-	} else if failuredomain == "rack" {
+	case "rack":
 		return "topology.rook.io/rack"
-	} else if failuredomain == "hostname" || failuredomain == "host" {
+	case "hostname", "host":
 		return "kubernetes.io/hostname"
+	default:
+		return ""
 	}
-	return ""
+}
+
+// If implements an if/else expression
+func If[T any](cond bool, trueVal, falseVal T) T {
+	if cond {
+		return trueVal
+	} else {
+		return falseVal
+	}
+}
+
+func IsDefaultPoolErasureCodingEnabled(cephBlockpool ocsv1.ManageCephBlockPools) bool {
+	// if ec is enabled set the pool names differently
+	// Change the pool name for the default storageclass only if ec spec was chosen for default day-1 cephBlockpool
+	return cephBlockpool.ErasureCodedMetadataPool != "" && cephBlockpool.PoolSpec.IsErasureCoded()
+}
+
+func IsForbiddenError(err error) bool {
+	statusErr, ok := err.(*errors.StatusError)
+	if ok {
+		for i := range statusErr.ErrStatus.Details.Causes {
+			if statusErr.ErrStatus.Details.Causes[i].Type == metav1.CauseTypeForbidden {
+				return true
+			}
+		}
+	}
+	return false
 }

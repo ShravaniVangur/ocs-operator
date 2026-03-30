@@ -49,13 +49,8 @@ const (
 	RookCephOperatorConfigName = "rook-ceph-operator-config"
 
 	// These are the keys in the ocs-operator-config configmap
-	ClusterNameKey              = "CSI_CLUSTER_NAME"
 	RookCurrentNamespaceOnlyKey = "ROOK_CURRENT_NAMESPACE_ONLY"
-	EnableTopologyKey           = "CSI_ENABLE_TOPOLOGY"
-	TopologyDomainLabelsKey     = "CSI_TOPOLOGY_DOMAIN_LABELS"
-	EnableNFSKey                = "ROOK_CSI_ENABLE_NFS"
 	DisableCSIDriverKey         = "ROOK_CSI_DISABLE_DRIVER"
-	EnableCephfsKey             = "ROOK_CSI_ENABLE_CEPHFS"
 
 	// This is the name for the FieldIndex
 	OwnerUIDIndexName   = "ownerUID"
@@ -267,7 +262,7 @@ func GetKMSConfigMap(configMapName string, instance *ocsv1.StorageCluster, clien
 	err := client.Get(context.TODO(),
 		types.NamespacedName{
 			Name:      configMapName,
-			Namespace: instance.ObjectMeta.Namespace,
+			Namespace: instance.Namespace,
 		},
 		&kmsConfigMap,
 	)

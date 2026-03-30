@@ -44,7 +44,6 @@ import (
 )
 
 // StorageClusterPeerReconciler reconciles a StorageClusterPeer object
-// nolint:revive
 type StorageClusterPeerReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
@@ -99,7 +98,7 @@ func (r *StorageClusterPeerReconciler) Reconcile(ctx context.Context, request ct
 	result, reconcileError := r.reconcileStates(storageClusterPeer)
 
 	// Apply status changes
-	statusError := r.Client.Status().Update(r.ctx, storageClusterPeer)
+	statusError := r.Status().Update(r.ctx, storageClusterPeer)
 	if statusError != nil {
 		r.log.Info("Could not update StorageClusterPeer status.")
 	}
@@ -125,7 +124,8 @@ func (r *StorageClusterPeerReconciler) reconcileStates(storageClusterPeer *ocsv1
 
 	if idx == -1 {
 		storageClusterPeer.Status.State = ocsv1.StorageClusterPeerStateFailed
-		return ctrl.Result{}, fmt.Errorf("failed to find StorgeCluster owning the StorageClusterPeer")
+		storageClusterPeer.Status.FailureReason = ocsv1.StorageClusterPeerFailureReasonClusterNotFound
+		return ctrl.Result{}, fmt.Errorf("failed to find StorageCluster owning the StorageClusterPeer")
 	}
 
 	owner := &storageClusterPeer.OwnerReferences[idx]
@@ -134,10 +134,12 @@ func (r *StorageClusterPeerReconciler) reconcileStates(storageClusterPeer *ocsv1
 
 	if err := r.get(storageCluster); client.IgnoreNotFound(err) != nil {
 		storageClusterPeer.Status.State = ocsv1.StorageClusterPeerStateFailed
+		storageClusterPeer.Status.FailureReason = ocsv1.StorageClusterPeerFailureReasonClusterNotFound
 		r.log.Error(err, "Error fetching StorageCluster for StorageClusterPeer found in the same namespace.")
 		return ctrl.Result{}, err
 	} else if k8serrors.IsNotFound(err) {
 		storageClusterPeer.Status.State = ocsv1.StorageClusterPeerStateFailed
+		storageClusterPeer.Status.FailureReason = ocsv1.StorageClusterPeerFailureReasonClusterNotFound
 		r.log.Error(err, "Cannot find a StorageCluster for StorageClusterPeer in the same namespace.")
 		return ctrl.Result{}, nil
 	}
@@ -148,12 +150,14 @@ func (r *StorageClusterPeerReconciler) reconcileStates(storageClusterPeer *ocsv1
 	ticketArr := strings.Split(string(storageClusterPeer.Spec.OnboardingToken), ".")
 	if len(ticketArr) != 2 {
 		storageClusterPeer.Status.State = ocsv1.StorageClusterPeerStateFailed
+		storageClusterPeer.Status.FailureReason = ocsv1.StorageClusterPeerFailureReasonInvalidOnboardingTicket
 		r.log.Error(fmt.Errorf("invalid ticket"), "Invalid onboarding ticket. Does not conform to expected ticket structure")
 		return ctrl.Result{}, nil
 	}
 	message, err := base64.StdEncoding.DecodeString(ticketArr[0])
 	if err != nil {
 		storageClusterPeer.Status.State = ocsv1.StorageClusterPeerStateFailed
+		storageClusterPeer.Status.FailureReason = ocsv1.StorageClusterPeerFailureReasonInvalidOnboardingTicket
 		r.log.Error(err, "failed to decode onboarding ticket")
 		return ctrl.Result{}, nil
 	}
@@ -161,6 +165,7 @@ func (r *StorageClusterPeerReconciler) reconcileStates(storageClusterPeer *ocsv1
 	err = json.Unmarshal(message, &ticketData)
 	if err != nil {
 		storageClusterPeer.Status.State = ocsv1.StorageClusterPeerStateFailed
+		storageClusterPeer.Status.FailureReason = ocsv1.StorageClusterPeerFailureReasonInvalidOnboardingTicket
 		r.log.Error(err, "onboarding ticket message is not a valid JSON.")
 		return ctrl.Result{}, nil
 	}
@@ -172,6 +177,7 @@ func (r *StorageClusterPeerReconciler) reconcileStates(storageClusterPeer *ocsv1
 	ocsClient, err := providerClient.NewProviderClient(r.ctx, storageClusterPeer.Spec.ApiEndpoint, util.OcsClientTimeout)
 	if err != nil {
 		storageClusterPeer.Status.State = ocsv1.StorageClusterPeerStateFailed
+		storageClusterPeer.Status.FailureReason = ocsv1.StorageClusterPeerFailureReasonConnectionFailed
 		return ctrl.Result{}, fmt.Errorf("failed to create a new provider client: %v", err)
 	}
 	defer ocsClient.Close()
@@ -184,20 +190,24 @@ func (r *StorageClusterPeerReconciler) reconcileStates(storageClusterPeer *ocsv1
 		st, ok := status.FromError(err)
 		if !ok {
 			r.log.Error(fmt.Errorf("invalid code"), "failed to extract an HTTP status code from error")
+			storageClusterPeer.Status.FailureReason = ocsv1.StorageClusterPeerFailureReasonConnectionFailed
 			return ctrl.Result{}, fmt.Errorf("failed to extract an HTTP status code from error")
 		}
 		if st.Code() != codes.InvalidArgument {
+			storageClusterPeer.Status.FailureReason = ocsv1.StorageClusterPeerFailureReasonConnectionFailed
 			return ctrl.Result{}, err
 		}
 		storageClusterPeer.Status.State = ocsv1.StorageClusterPeerStateFailed
+		storageClusterPeer.Status.FailureReason = ocsv1.StorageClusterPeerFailureReasonInvalidOnboardingTicket
 		return ctrl.Result{}, nil
 	}
 
 	storageClusterPeer.Status.State = ocsv1.StorageClusterPeerStatePeered
+	storageClusterPeer.Status.FailureReason = ""
 	return ctrl.Result{}, nil
 }
 
 func (r *StorageClusterPeerReconciler) get(obj client.Object) error {
 	key := client.ObjectKeyFromObject(obj)
-	return r.Client.Get(r.ctx, key, obj)
+	return r.Get(r.ctx, key, obj)
 }

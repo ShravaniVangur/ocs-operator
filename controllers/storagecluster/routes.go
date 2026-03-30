@@ -54,6 +54,16 @@ func (obj *ocsCephRGWRoutes) ensureCreated(r *StorageClusterReconciler, instance
 		return reconcile.Result{}, err
 	}
 
+	// delete the http RGW route
+	if instance.Spec.ManagedResources.CephObjectStores.DisableHttp {
+		r.Log.Info("deleting any existing RGW http routes")
+		err := r.deleteHttpRoute(instance)
+		if err != nil {
+			r.Log.Error(err, "failed to delete http Ceph RGW route.")
+			return reconcile.Result{}, err
+		}
+	}
+
 	return reconcile.Result{}, nil
 }
 
@@ -69,32 +79,32 @@ func (obj *ocsCephRGWRoutes) ensureDeleted(r *StorageClusterReconciler, sc *ocsv
 	}
 
 	for _, route := range routes {
-		err := r.Client.Get(context.TODO(), types.NamespacedName{Name: route.Name, Namespace: sc.Namespace}, foundRoute)
+		err := r.Get(context.TODO(), types.NamespacedName{Name: route.Name, Namespace: sc.Namespace}, foundRoute)
 		if err != nil {
 			if errors.IsNotFound(err) {
 				r.Log.Info("Uninstall: Ceph RGW Route not found.", "CephRGWRoute", klog.KRef(sc.Namespace, route.Name))
 				continue
 			}
-			return reconcile.Result{}, fmt.Errorf("Uninstall: Unable to retrieve route %v: %v", route.Name, err)
+			return reconcile.Result{}, fmt.Errorf("uninstall: unable to retrieve route %v: %v", route.Name, err)
 		}
 
 		if route.GetDeletionTimestamp().IsZero() {
 			r.Log.Info("Uninstall: Deleting Ceph RGW Route.", "CephRGWRoute", klog.KRef(sc.Namespace, route.Name))
-			err = r.Client.Delete(context.TODO(), foundRoute)
+			err = r.Delete(context.TODO(), foundRoute)
 			if err != nil {
 				r.Log.Error(err, "Uninstall: Failed to delete Ceph RGW Route.", "CephRGWRoute", klog.KRef(sc.Namespace, route.Name))
-				return reconcile.Result{}, fmt.Errorf("Uninstall: Failed to delete Route %v: %v", route.Name, err)
+				return reconcile.Result{}, fmt.Errorf("uninstall: failed to delete Route %v: %v", route.Name, err)
 			}
 		}
 
-		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: route.Name, Namespace: sc.Namespace}, foundRoute)
+		err = r.Get(context.TODO(), types.NamespacedName{Name: route.Name, Namespace: sc.Namespace}, foundRoute)
 		if err != nil {
 			if errors.IsNotFound(err) {
 				r.Log.Info("Uninstall: Ceph RGW Route is deleted.", "CephRGWRoute", klog.KRef(sc.Namespace, route.Name))
 				continue
 			}
 		}
-		return reconcile.Result{}, fmt.Errorf("Uninstall: Waiting for Ceph RGW Route %v to be deleted", route.Name)
+		return reconcile.Result{}, fmt.Errorf("uninstall: waiting for Ceph RGW Route %v to be deleted", route.Name)
 
 	}
 	return reconcile.Result{}, nil
@@ -104,7 +114,7 @@ func (obj *ocsCephRGWRoutes) ensureDeleted(r *StorageClusterReconciler, sc *ocsv
 func (r *StorageClusterReconciler) createCephRGWRoutes(routes []*routev1.Route, instance *ocsv1.StorageCluster) error {
 	for _, route := range routes {
 		existing := routev1.Route{}
-		err := r.Client.Get(context.TODO(), types.NamespacedName{Name: route.Name, Namespace: route.Namespace}, &existing)
+		err := r.Get(context.TODO(), types.NamespacedName{Name: route.Name, Namespace: route.Namespace}, &existing)
 		switch {
 		case err == nil:
 			reconcileStrategy := ReconcileStrategy(instance.Spec.ManagedResources.CephObjectStores.ReconcileStrategy)
@@ -118,16 +128,16 @@ func (r *StorageClusterReconciler) createCephRGWRoutes(routes []*routev1.Route, 
 			}
 
 			r.Log.Info("Restoring original Ceph RGW Route.", "CephRGWRoute", klog.KRef(route.Namespace, route.Name))
-			existing.ObjectMeta.OwnerReferences = route.ObjectMeta.OwnerReferences
+			existing.OwnerReferences = route.OwnerReferences
 			route.ObjectMeta = existing.ObjectMeta
-			err = r.Client.Update(context.TODO(), route)
+			err = r.Update(context.TODO(), route)
 			if err != nil {
 				r.Log.Error(err, "Failed to update Ceph RGW Route Object.", "CephRGWRoute", klog.KRef(route.Namespace, route.Name))
 				return err
 			}
 		case errors.IsNotFound(err):
 			r.Log.Info("Creating Ceph RGW Route.", "CephRGWRoute", klog.KRef(route.Namespace, route.Name))
-			err = r.Client.Create(context.TODO(), route)
+			err = r.Create(context.TODO(), route)
 			if err != nil {
 				r.Log.Error(err, "Failed to create Ceph RGW Route.", "CephRGWRoute", klog.KRef(route.Namespace, route.Name))
 				return err
@@ -141,51 +151,59 @@ func (r *StorageClusterReconciler) createCephRGWRoutes(routes []*routev1.Route, 
 // on first run.
 func (r *StorageClusterReconciler) newCephRGWRoutes(initData *ocsv1.StorageCluster) ([]*routev1.Route, error) {
 	// Use the same name as for the Ceph Object Store, two routes are exposed one with secure port, other with insecure port
-	ret := []*routev1.Route{
-		{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      util.GenerateNameForCephObjectStore(initData),
-				Namespace: initData.Namespace,
+	var insecureRoute = routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      util.GenerateNameForCephObjectStore(initData),
+			Namespace: initData.Namespace,
+		},
+		Spec: routev1.RouteSpec{
+			To: routev1.RouteTargetReference{
+				Kind: "Service",
+				Name: generateNameForCephObjectStoreService(initData),
 			},
-			Spec: routev1.RouteSpec{
-				To: routev1.RouteTargetReference{
-					Kind: "Service",
-					Name: generateNameForCephObjectStoreService(initData),
+			Port: &routev1.RoutePort{
+				TargetPort: intstr.IntOrString{
+					Type:   intstr.String,
+					StrVal: "http",
 				},
-				Port: &routev1.RoutePort{
-					TargetPort: intstr.IntOrString{
-						Type:   intstr.String,
-						StrVal: "http",
-					},
-				},
-				TLS: &routev1.TLSConfig{
-					Termination:                   routev1.TLSTerminationEdge,
-					InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyAllow,
-				},
+			},
+			TLS: &routev1.TLSConfig{
+				Termination:                   routev1.TLSTerminationEdge,
+				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyAllow,
 			},
 		},
-		{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      util.GenerateNameForCephObjectStore(initData) + "-secure",
-				Namespace: initData.Namespace,
+	}
+
+	var secureRoute = routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      util.GenerateNameForCephObjectStore(initData) + "-secure",
+			Namespace: initData.Namespace,
+		},
+		Spec: routev1.RouteSpec{
+			To: routev1.RouteTargetReference{
+				Kind: "Service",
+				Name: generateNameForCephObjectStoreService(initData),
 			},
-			Spec: routev1.RouteSpec{
-				To: routev1.RouteTargetReference{
-					Kind: "Service",
-					Name: generateNameForCephObjectStoreService(initData),
+			Port: &routev1.RoutePort{
+				TargetPort: intstr.IntOrString{
+					Type:   intstr.String,
+					StrVal: "https",
 				},
-				Port: &routev1.RoutePort{
-					TargetPort: intstr.IntOrString{
-						Type:   intstr.String,
-						StrVal: "https",
-					},
-				},
-				TLS: &routev1.TLSConfig{
-					Termination:                   routev1.TLSTerminationReencrypt,
-					InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
-				},
+			},
+			TLS: &routev1.TLSConfig{
+				Termination:                   routev1.TLSTerminationReencrypt,
+				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
 			},
 		},
+	}
+
+	ret := []*routev1.Route{}
+	ret = append(ret, &secureRoute)
+	// add http route only if DisableHttp is set to false
+	if !initData.Spec.ManagedResources.CephObjectStores.DisableHttp {
+		ret = append(ret, &insecureRoute)
+	} else {
+		r.Log.Info("skip creating insecure rgw http route", "CephRGWRoute", klog.KRef(insecureRoute.Namespace, insecureRoute.Name))
 	}
 
 	for _, obj := range ret {
@@ -196,6 +214,31 @@ func (r *StorageClusterReconciler) newCephRGWRoutes(initData *ocsv1.StorageClust
 		}
 	}
 	return ret, nil
+}
+
+// deleteHttpRoute deletes the HTTP RGW route
+func (r *StorageClusterReconciler) deleteHttpRoute(sc *ocsv1.StorageCluster) error {
+	routeName := util.GenerateNameForCephObjectStore(sc)
+	route := &routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      routeName,
+			Namespace: sc.Namespace,
+		},
+	}
+
+	r.Log.Info("Deleting http Ceph RGW Route.", "CephRGWRoute", klog.KRef(sc.Namespace, routeName))
+	err := r.Delete(context.TODO(), route)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			r.Log.Info("Http Ceph RGW Route not found, nothing to delete.", "CephRGWRoute", klog.KRef(sc.Namespace, routeName))
+			return nil
+		}
+		r.Log.Error(err, "Failed to delete http Ceph RGW Route.", "CephRGWRoute", klog.KRef(sc.Namespace, routeName))
+		return fmt.Errorf("failed to delete http Ceph RGW Route %v: %v", routeName, err)
+	}
+
+	r.Log.Info("Successfully deleted http Ceph RGW Route.", "CephRGWRoute", klog.KRef(sc.Namespace, routeName))
+	return nil
 }
 
 // generateNameForCephObjectStoreService is temporary - we should ideally get this name from rook

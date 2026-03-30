@@ -26,7 +26,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/red-hat-storage/ocs-operator/api/v4/v1alpha1"
 	ocsv1alpha1 "github.com/red-hat-storage/ocs-operator/api/v4/v1alpha1"
 	"github.com/red-hat-storage/ocs-operator/v4/controllers/defaults"
 	"github.com/red-hat-storage/ocs-operator/v4/controllers/util"
@@ -120,7 +119,7 @@ func (r *StorageConsumerReconciler) Reconcile(ctx context.Context, request recon
 	result, reconcileError := r.reconcilePhases()
 
 	// Apply status changes to the StorageConsumer
-	statusError := r.Client.Status().Update(r.ctx, r.storageConsumer)
+	statusError := r.Status().Update(r.ctx, r.storageConsumer)
 	if statusError != nil {
 		r.Log.Info("Could not update StorageConsumer status.")
 	}
@@ -159,12 +158,12 @@ func (r *StorageConsumerReconciler) reconcilePhases() (reconcile.Result, error) 
 
 func (r *StorageConsumerReconciler) reconcileNotEnabledPhases() (reconcile.Result, error) {
 	if r.storageConsumer.GetDeletionTimestamp().IsZero() {
-		r.storageConsumer.Status.State = v1alpha1.StorageConsumerStateNotEnabled
+		r.storageConsumer.Status.State = ocsv1alpha1.StorageConsumerStateNotEnabled
 		if err := r.reconcileOnboardingSecret(); err != nil {
 			return reconcile.Result{}, err
 		}
 	} else {
-		r.storageConsumer.Status.State = v1alpha1.StorageConsumerStateDeleting
+		r.storageConsumer.Status.State = ocsv1alpha1.StorageConsumerStateDeleting
 	}
 	return reconcile.Result{}, nil
 }
@@ -184,12 +183,12 @@ func (r *StorageConsumerReconciler) reconcileEnabledPhases() (reconcile.Result, 
 	if r.storageConsumer.GetDeletionTimestamp().IsZero() {
 		if controllerutil.AddFinalizer(r.storageConsumer, storageConsumerFinalizer) {
 			r.Log.Info("Finalizer not found for StorageConsumer. Adding finalizer.")
-			if err := r.Client.Update(r.ctx, r.storageConsumer); err != nil {
+			if err := r.Update(r.ctx, r.storageConsumer); err != nil {
 				return reconcile.Result{}, fmt.Errorf("failed to update StorageConsumer: %v", err)
 			}
 		}
 
-		r.storageConsumer.Status.State = v1alpha1.StorageConsumerStateConfiguring
+		r.storageConsumer.Status.State = ocsv1alpha1.StorageConsumerStateConfiguring
 		if err := r.deleteOnboardingSecret(); err != nil {
 			return reconcile.Result{}, nil
 		}
@@ -236,7 +235,6 @@ func (r *StorageConsumerReconciler) reconcileEnabledPhases() (reconcile.Result, 
 		if availableServices.CephFs {
 			if err := r.reconcileCephClientCephFSProvisioner(
 				util.GenerateCsiCephFsProvisionerCephClientName(csiCephUserCurrGen, r.storageConsumer.UID),
-				util.GenerateNameForCephFilesystem(storageCluster.Name),
 				consumerResources.GetSubVolumeGroupName(),
 				consumerConfigMap,
 				csiCephUserCurrGen,
@@ -245,7 +243,6 @@ func (r *StorageConsumerReconciler) reconcileEnabledPhases() (reconcile.Result, 
 			}
 			if err := r.reconcileCephClientCephFSNode(
 				util.GenerateCsiCephFsNodeCephClientName(csiCephUserCurrGen, r.storageConsumer.UID),
-				util.GenerateNameForCephFilesystem(storageCluster.Name),
 				consumerResources.GetSubVolumeGroupName(),
 				consumerConfigMap,
 				csiCephUserCurrGen,
@@ -312,10 +309,10 @@ func (r *StorageConsumerReconciler) reconcileEnabledPhases() (reconcile.Result, 
 			}
 		}
 
-		r.storageConsumer.Status.State = v1alpha1.StorageConsumerStateReady
+		r.storageConsumer.Status.State = ocsv1alpha1.StorageConsumerStateReady
 
 	} else {
-		r.storageConsumer.Status.State = v1alpha1.StorageConsumerStateDeleting
+		r.storageConsumer.Status.State = ocsv1alpha1.StorageConsumerStateDeleting
 		_, hasForceDeleteAnnotation := r.storageConsumer.GetAnnotations()[util.ForceDeletionAnnotationKey]
 
 		consumerOwners := 0
@@ -355,7 +352,7 @@ func (r *StorageConsumerReconciler) reconcileEnabledPhases() (reconcile.Result, 
 					)
 				}
 				rns.Namespace = r.namespace
-				if err := r.Client.Patch(r.ctx, rns, annotationPatch); client.IgnoreNotFound(err) != nil {
+				if err := r.Patch(r.ctx, rns, annotationPatch); client.IgnoreNotFound(err) != nil {
 					return reconcile.Result{}, fmt.Errorf("failed to annotate CephBlockPoolRadosNamespace: %v", err)
 				}
 			}
@@ -363,7 +360,7 @@ func (r *StorageConsumerReconciler) reconcileEnabledPhases() (reconcile.Result, 
 			svg := &rookCephv1.CephFilesystemSubVolumeGroup{}
 			svg.Name = consumerResources.GetSubVolumeGroupName()
 			svg.Namespace = r.namespace
-			if err := r.Client.Patch(r.ctx, svg, annotationPatch); client.IgnoreNotFound(err) != nil {
+			if err := r.Patch(r.ctx, svg, annotationPatch); client.IgnoreNotFound(err) != nil {
 				return reconcile.Result{}, fmt.Errorf("failed to annotate CephFilesystemSubVolumeGroup: %v", err)
 			}
 		}
@@ -371,7 +368,7 @@ func (r *StorageConsumerReconciler) reconcileEnabledPhases() (reconcile.Result, 
 		if r.storageConsumer.Status.Client == nil || hasForceDeleteAnnotation {
 			if controllerutil.RemoveFinalizer(r.storageConsumer, storageConsumerFinalizer) {
 				r.Log.Info("removing finalizer from StorageConsumer.")
-				if err := r.Client.Update(r.ctx, r.storageConsumer); err != nil {
+				if err := r.Update(r.ctx, r.storageConsumer); err != nil {
 					r.Log.Info("Failed to remove finalizer from StorageConsumer")
 					return reconcile.Result{}, fmt.Errorf("failed to remove finalizer from StorageConsumer: %v", err)
 				}
@@ -670,7 +667,6 @@ func (r *StorageConsumerReconciler) reconcileCephClientRBDNode(
 
 func (r *StorageConsumerReconciler) reconcileCephClientCephFSProvisioner(
 	cephClientName string,
-	cephFileSystemName string,
 	subVolumeGroupName string,
 	additionalOwner client.Object,
 	csiCephUserGeneration int64,
@@ -690,7 +686,7 @@ func (r *StorageConsumerReconciler) reconcileCephClientCephFSProvisioner(
 		cephClient.Spec.Caps = map[string]string{
 			"mon": "allow r, allow command 'osd blocklist'",
 			"mgr": "allow rw",
-			"osd": fmt.Sprintf("allow rw tag cephfs metadata=%s", cephFileSystemName),
+			"osd": "allow rw tag cephfs metadata=*",
 			"mds": fmt.Sprintf("allow rw path=/volumes/%s", subVolumeGroupName),
 		}
 		return nil
@@ -702,7 +698,6 @@ func (r *StorageConsumerReconciler) reconcileCephClientCephFSProvisioner(
 
 func (r *StorageConsumerReconciler) reconcileCephClientCephFSNode(
 	cephClientName string,
-	cephFileSystemName string,
 	subVolumeGroupName string,
 	additionalOwner client.Object,
 	csiCephUserGeneration int64,
@@ -722,7 +717,7 @@ func (r *StorageConsumerReconciler) reconcileCephClientCephFSNode(
 		cephClient.Spec.Caps = map[string]string{
 			"mon": "allow r",
 			"mgr": "allow rw",
-			"osd": fmt.Sprintf("allow rw tag cephfs *=%s", cephFileSystemName),
+			"osd": "allow rw tag cephfs *=*",
 			"mds": fmt.Sprintf("allow rw path=/volumes/%s", subVolumeGroupName),
 		}
 		return nil
@@ -819,7 +814,7 @@ func (r *StorageConsumerReconciler) reconcileNoobaaAccount() error {
 
 func (r *StorageConsumerReconciler) get(obj client.Object) error {
 	key := client.ObjectKeyFromObject(obj)
-	return r.Client.Get(r.ctx, key, obj)
+	return r.Get(r.ctx, key, obj)
 }
 
 func (r *StorageConsumerReconciler) own(resource metav1.Object) error {
@@ -833,7 +828,7 @@ func (r *StorageConsumerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		func(context context.Context, obj client.Object) []reconcile.Request {
 			// Get the StorageConsumer objects
 			consumers := &ocsv1alpha1.StorageConsumerList{}
-			err := r.Client.List(context, consumers, &client.ListOptions{Namespace: obj.GetNamespace()})
+			err := r.List(context, consumers, &client.ListOptions{Namespace: obj.GetNamespace()})
 			if err != nil {
 				r.Log.Error(err, "Unable to list StorageConsumers")
 				return []reconcile.Request{}

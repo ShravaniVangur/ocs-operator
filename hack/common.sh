@@ -9,7 +9,7 @@ HOST_OS="$(go env GOHOSTOS)"
 HOST_ARCH="$(go env GOHOSTARCH)"
 
 # Current DEV version of the CSV
-DEFAULT_CSV_VERSION="4.21.0"
+DEFAULT_CSV_VERSION="4.22.0"
 CSV_VERSION="${CSV_VERSION:-${DEFAULT_CSV_VERSION}}"
 VERSION="${VERSION:-${CSV_VERSION}}"
 LDFLAGS="-X github.com/red-hat-storage/ocs-operator/v4/version.Version=${CSV_VERSION}"
@@ -45,11 +45,11 @@ BUNDLE_FULL_IMAGE_NAME="${BUNDLE_FULL_IMAGE_NAME:=${IMAGE_REGISTRY}/${REGISTRY_N
 
 # Bundle images of Dependencies of OCS Operator
 NOOBAA_BUNDLE_FULL_IMAGE_NAME="quay.io/noobaa/noobaa-operator-bundle:master-20250730"
-ROOK_BUNDLE_FULL_IMAGE_NAME="quay.io/ocs-dev/rook-ceph-operator-bundle:master-b0d17ebba"
-OCS_CLIENT_BUNDLE_FULL_IMAGE_NAME="quay.io/ocs-dev/ocs-client-operator-bundle:main-7c764ee"
+ROOK_BUNDLE_FULL_IMAGE_NAME="quay.io/ocs-dev/rook-ceph-operator-bundle:master-76dd3bdbe"
+OCS_CLIENT_BUNDLE_FULL_IMAGE_NAME="quay.io/ocs-dev/ocs-client-operator-bundle:main-408b4fb"
 # Below bundles are dependencies of ocs-client-operator, Ref- https://github.com/red-hat-storage/ocs-client-operator/blob/main/bundle/metadata/dependencies.yaml
-CSI_ADDONS_BUNDLE_FULL_IMAGE_NAME="quay.io/csiaddons/k8s-bundle:v0.12.0"
-CEPH_CSI_BUNDLE_FULL_IMAGE_NAME="quay.io/ocs-dev/cephcsi-operator-bundle:main-feeea31"
+CSI_ADDONS_BUNDLE_FULL_IMAGE_NAME="quay.io/csiaddons/k8s-bundle:v0.14.0"
+CEPH_CSI_BUNDLE_FULL_IMAGE_NAME="quay.io/ocs-dev/cephcsi-operator-bundle:main-bb74193"
 RECIPE_BUNDLE_FULL_IMAGE_NAME="quay.io/ramendr/recipe-bundle:latest"
 SNAPSHOT_CONTROLLER_BUNDLE_FULL_IMAGE_NAME="quay.io/ocs-dev/snapshot-controller-bundle:main-dfea221"
 
@@ -70,7 +70,7 @@ LOCALBIN="$(pwd)/bin"
 OPERATOR_SDK_VERSION="v1.30.0"
 OPERATOR_SDK="${LOCALBIN}/operator-sdk-${OPERATOR_SDK_VERSION}"
 GINKGO="${LOCALBIN}/ginkgo"
-GOLANGCI_LINT_VERSION="v1.64.8"
+GOLANGCI_LINT_VERSION="v2.11.3"
 GOLANGCI_LINT="${LOCALBIN}/golangci-lint"
 SHELLCHECK_VERSION="v0.9.0"
 SHELLCHECK="${LOCALBIN}/shellcheck"

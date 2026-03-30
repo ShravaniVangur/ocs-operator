@@ -3,7 +3,7 @@ package storagecluster
 import (
 	"context"
 	"fmt"
-	"reflect"
+	"maps"
 	"strconv"
 	"strings"
 
@@ -15,6 +15,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -38,41 +40,45 @@ func (r *StorageClusterReconciler) createSnapshotClasses(vsccs []SnapshotClassCo
 			continue
 		}
 
-		vsc := vscc.snapshotClass
+		desired := vscc.snapshotClass
 		existing := &snapapi.VolumeSnapshotClass{}
-		err := r.Client.Get(context.TODO(), types.NamespacedName{Name: vsc.Name, Namespace: vsc.Namespace}, existing)
-		if err != nil {
-			if errors.IsNotFound(err) {
-				// Since the SnapshotClass is not found, we will create a new one
-				r.Log.Info("Creating SnapshotClass.", "SnapshotClass", klog.KRef(vsc.Namespace, vsc.Name))
-				err = r.Client.Create(context.TODO(), vsc)
-				if err != nil {
-					r.Log.Error(err, "Failed to create SnapshotClass.", "SnapshotClass", klog.KRef(vsc.Namespace, vsc.Name))
-					return err
-				}
-				// no error, continue with the next iteration
-				continue
+		existing.Name = desired.Name
+		_, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, existing, func() error {
+			// If found and reconcileStrategy is init we skip
+			if existing.UID != "" && vscc.reconcileStrategy == ReconcileStrategyInit {
+				return nil
 			}
 
-			r.Log.Error(err, "Failed to 'Get' SnapshotClass.", "SnapshotClass", klog.KRef(vsc.Namespace, vsc.Name))
-			return err
-		}
-		if vscc.reconcileStrategy == ReconcileStrategyInit {
-			return nil
-		}
-		if existing.DeletionTimestamp != nil {
-			return fmt.Errorf("failed to restore SnapshotClass %q because it is marked for deletion", existing.Name)
-		}
-		// if there is a mismatch in the parameters of existing vs created resources,
-		if !reflect.DeepEqual(vsc.Parameters, existing.Parameters) {
-			// we have to update the existing SnapshotClass
-			r.Log.Info("SnapshotClass needs to be updated", "SnapshotClass", klog.KRef(existing.Namespace, existing.Name))
-			existing.ObjectMeta.OwnerReferences = vsc.ObjectMeta.OwnerReferences
-			vsc.ObjectMeta = existing.ObjectMeta
-			if err := r.Client.Update(context.TODO(), vsc); err != nil {
-				r.Log.Error(err, "SnapshotClass updation failed.", "SnapshotClass", klog.KRef(existing.Namespace, existing.Name))
-				return err
+			if len(existing.Labels) == 0 {
+				existing.Labels = map[string]string{}
 			}
+			if len(existing.Annotations) == 0 {
+				existing.Annotations = map[string]string{}
+			}
+
+			maps.Copy(existing.Labels, desired.Labels)
+			maps.Copy(existing.Annotations, desired.Annotations)
+
+			existing.DeletionPolicy = desired.DeletionPolicy
+			existing.Driver = desired.Driver
+			existing.Parameters = desired.Parameters
+			return nil
+		})
+		if util.IsForbiddenError(err) {
+			if err := r.Delete(r.ctx, existing); client.IgnoreNotFound(err) != nil {
+				return fmt.Errorf("failed to replace SnapshotClass %v: %v", existing.GetName(), err)
+			}
+
+			// k8s doesn't allow us to create objects when resourceVersion is set, as we are DeepCopying the
+			// object, the resource version also gets copied, hence we need to set it to empty before creating it
+			existing.SetResourceVersion("")
+			if err := r.Create(r.ctx, existing); err != nil {
+				return fmt.Errorf("failed to replace SnapshotClass %v: %v", existing.GetName(), err)
+			}
+		}
+		if err != nil {
+			r.Log.Error(err, "Failed to create or update SnapshotClass.", "SnapshotClass", existing.GetName())
+			return err
 		}
 	}
 	return nil
@@ -105,7 +111,7 @@ func (r *StorageClusterReconciler) getClusterIDAndSecretName(instance *ocsv1.Sto
 			radosNamespaceName = d.Data["radosNamespaceName"]
 			// get the clusterID from the radosNamespace status
 			radosNamespace := &cephv1.CephBlockPoolRadosNamespace{}
-			err := r.Client.Get(context.TODO(), types.NamespacedName{Name: radosNamespaceName, Namespace: instance.Namespace}, radosNamespace)
+			err := r.Get(context.TODO(), types.NamespacedName{Name: radosNamespaceName, Namespace: instance.Namespace}, radosNamespace)
 			if err != nil {
 				log.Error(err, "CephBlockPoolRadosNamespace not found", "CephBlockPoolRadosNamespace", klog.KRef(instance.Namespace, radosNamespaceName))
 				return "", "", err
@@ -123,12 +129,25 @@ func (r *StorageClusterReconciler) getClusterIDAndSecretName(instance *ocsv1.Sto
 
 // ensureCreated functions ensures that snpashotter classes are created
 func (obj *ocsSnapshotClass) ensureCreated(r *StorageClusterReconciler, instance *ocsv1.StorageCluster) (reconcile.Result, error) {
+
+	var fsid string
+	if cephCluster, err := util.GetCephClusterInNamespace(r.ctx, r.Client, instance.Namespace); err != nil {
+		return reconcile.Result{}, err
+	} else if cephCluster.Status.CephStatus == nil || cephCluster.Status.CephStatus.FSID == "" {
+		return reconcile.Result{}, fmt.Errorf("waiting for Ceph FSID")
+	} else {
+		fsid = cephCluster.Status.CephStatus.FSID
+	}
+
+	rbdStorageID := util.CalculateCephRbdStorageID(fsid, getExternalModeRadosNamespaceName(instance))
+	cephFsStorageID := util.CalculateCephFsStorageID(fsid, "csi")
+
 	rbdClusterID, rbdProvisionerSecret, err := r.getClusterIDAndSecretName(instance, util.RbdSnapshotter)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
 	rbdSnapClass := SnapshotClassConfiguration{
-		snapshotClass:     util.NewDefaultRbdSnapshotClass(rbdClusterID, rbdProvisionerSecret, instance.Namespace, ""),
+		snapshotClass:     util.NewDefaultRbdSnapshotClass(rbdClusterID, rbdProvisionerSecret, instance.Namespace, rbdStorageID),
 		reconcileStrategy: ReconcileStrategy(instance.Spec.ManagedResources.CephBlockPools.ReconcileStrategy),
 	}
 	rbdSnapClass.snapshotClass.Name = util.GenerateNameForSnapshotClass(instance.Name, util.RbdSnapshotter)
@@ -139,7 +158,7 @@ func (obj *ocsSnapshotClass) ensureCreated(r *StorageClusterReconciler, instance
 		return reconcile.Result{}, err
 	}
 	cephFsSnapClass := SnapshotClassConfiguration{
-		snapshotClass:     util.NewDefaultCephFsSnapshotClass(cephfsClusterID, cephfsProvisionerSecret, instance.Namespace, ""),
+		snapshotClass:     util.NewDefaultCephFsSnapshotClass(cephfsClusterID, cephfsProvisionerSecret, instance.Namespace, cephFsStorageID),
 		reconcileStrategy: ReconcileStrategy(instance.Spec.ManagedResources.CephFilesystems.ReconcileStrategy),
 	}
 	cephFsSnapClass.snapshotClass.Name = util.GenerateNameForSnapshotClass(instance.Name, util.CephfsSnapshotter)
@@ -165,7 +184,7 @@ func (obj *ocsSnapshotClass) ensureDeleted(r *StorageClusterReconciler, instance
 		vsc := &snapapi.VolumeSnapshotClass{}
 		vsc.Name = name
 		vsc.Namespace = instance.Namespace
-		err := r.Client.Delete(r.ctx, vsc)
+		err := r.Delete(r.ctx, vsc)
 		if err != nil {
 			if errors.IsNotFound(err) {
 				r.Log.Info("Uninstall: SnapshotClass not found, nothing to do.", "SnapshotClass", klog.KRef("", vsc.Name))

@@ -28,7 +28,7 @@ func (o *ocsCephBlockPools) deleteCephBlockPool(r *StorageClusterReconciler, cep
 
 	// delete
 	r.Log.Info("Uninstall: Deleting CephBlockPool.", "CephBlockPool", klog.KRef(cephBlockPool.Namespace, cephBlockPool.Name))
-	if err := r.Client.Delete(r.ctx, cephBlockPool); err != nil {
+	if err := r.Delete(r.ctx, cephBlockPool); err != nil {
 		r.Log.Error(err, "Uninstall: Failed to delete CephBlockPool.", "CephBlockPool", klog.KRef(cephBlockPool.Namespace, cephBlockPool.Name))
 		return reconcile.Result{}, fmt.Errorf("uninstall: Failed to delete CephBlockPool %v: %v", cephBlockPool.Name, err)
 	}
@@ -46,7 +46,7 @@ func (o *ocsCephBlockPools) reconcileCephBlockPool(r *StorageClusterReconciler, 
 	}
 
 	// Get to see if it already exists
-	err := r.Client.Get(r.ctx, client.ObjectKeyFromObject(cephBlockPool), cephBlockPool)
+	err := r.Get(r.ctx, client.ObjectKeyFromObject(cephBlockPool), cephBlockPool)
 	if client.IgnoreNotFound(err) != nil {
 		return reconcile.Result{}, err
 	}
@@ -67,7 +67,7 @@ func (o *ocsCephBlockPools) reconcileCephBlockPool(r *StorageClusterReconciler, 
 
 	_, err = ctrl.CreateOrUpdate(r.ctx, r.Client, cephBlockPool, func() error {
 		// Preserve the Mirroring spec, it's handled by the mirroring controller
-		existingMirroring := cephBlockPool.Spec.PoolSpec.Mirroring
+		existingMirroring := cephBlockPool.Spec.Mirroring
 
 		// Pass the poolSpec from the storageCluster CR
 		if storageCluster.Spec.ManagedResources.CephBlockPools.PoolSpec != nil {
@@ -78,8 +78,62 @@ func (o *ocsCephBlockPools) reconcileCephBlockPool(r *StorageClusterReconciler, 
 
 		// Set default values in the poolSpec as necessary
 		setDefaultDataPoolSpec(&cephBlockPool.Spec.PoolSpec, storageCluster)
-		cephBlockPool.Spec.PoolSpec.EnableRBDStats = true
-		cephBlockPool.Spec.PoolSpec.Mirroring = existingMirroring
+		cephBlockPool.Spec.EnableRBDStats = true
+		cephBlockPool.Spec.Mirroring = existingMirroring
+
+		return controllerutil.SetControllerReference(storageCluster, cephBlockPool, r.Scheme)
+	})
+	if err != nil {
+		r.Log.Error(err, "Failed to create/update CephBlockPool.", "CephBlockPool", klog.KRef(cephBlockPool.Namespace, cephBlockPool.Name))
+		return reconcile.Result{}, err
+	}
+	return reconcile.Result{}, nil
+}
+
+func (o *ocsCephBlockPools) reconcileCephMetadataBlockPool(r *StorageClusterReconciler, storageCluster *ocsv1.StorageCluster) (reconcile.Result, error) {
+	// create metadata pool if the name is provided in the spec, irrespective it was mentioned at day 1 or at day-2 or later.
+	if storageCluster.Spec.ManagedResources.CephBlockPools.ErasureCodedMetadataPool == "" {
+		return reconcile.Result{}, nil
+	}
+
+	cephMetadataBlockPoolPoolName := storageCluster.Spec.ManagedResources.CephBlockPools.ErasureCodedMetadataPool
+	cephBlockPool := &cephv1.CephBlockPool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      cephMetadataBlockPoolPoolName,
+			Namespace: storageCluster.Namespace,
+		},
+	}
+
+	// Get to see if it already exists
+	err := r.Get(r.ctx, client.ObjectKeyFromObject(cephBlockPool), cephBlockPool)
+	if client.IgnoreNotFound(err) != nil {
+		return reconcile.Result{}, err
+	}
+
+	// storageCluster is marked for deletion - delete the block pool
+	if storageCluster.GetDeletionTimestamp() != nil {
+		// if found, delete the block pool
+		if !errors.IsNotFound(err) {
+			return o.deleteCephBlockPool(r, cephBlockPool)
+		}
+		return reconcile.Result{}, nil
+	}
+
+	// If found and reconcileStrategy is init we skip
+	if !errors.IsNotFound(err) && ReconcileStrategy(storageCluster.Spec.ManagedResources.CephBlockPools.ReconcileStrategy) == ReconcileStrategyInit {
+		return reconcile.Result{}, nil
+	}
+
+	_, err = ctrl.CreateOrUpdate(r.ctx, r.Client, cephBlockPool, func() error {
+		// Preserve the Mirroring spec, it's handled by the mirroring controller
+		existingMirroring := cephBlockPool.Spec.Mirroring
+
+		cephBlockPool.Spec.PoolSpec = cephv1.PoolSpec{}
+
+		// Set default values in the poolSpec as necessary
+		setDefaultDataPoolSpec(&cephBlockPool.Spec.PoolSpec, storageCluster)
+		cephBlockPool.Spec.EnableRBDStats = true
+		cephBlockPool.Spec.Mirroring = existingMirroring
 
 		return controllerutil.SetControllerReference(storageCluster, cephBlockPool, r.Scheme)
 	})
@@ -103,7 +157,7 @@ func (o *ocsCephBlockPools) reconcileMgrCephBlockPool(r *StorageClusterReconcile
 	}
 
 	// Get to see if it already exists
-	err := r.Client.Get(r.ctx, client.ObjectKeyFromObject(cephBlockPool), cephBlockPool)
+	err := r.Get(r.ctx, client.ObjectKeyFromObject(cephBlockPool), cephBlockPool)
 	if client.IgnoreNotFound(err) != nil {
 		return reconcile.Result{}, err
 	}
@@ -134,11 +188,11 @@ func (o *ocsCephBlockPools) reconcileMgrCephBlockPool(r *StorageClusterReconcile
 		}
 		// Pass the EnableCrushUpdates for the default cephBlockPool spec if specified
 		if manageCBPSpec.PoolSpec != nil && manageCBPSpec.PoolSpec.EnableCrushUpdates != nil {
-			cephBlockPool.Spec.PoolSpec.EnableCrushUpdates = manageCBPSpec.PoolSpec.EnableCrushUpdates
+			cephBlockPool.Spec.EnableCrushUpdates = manageCBPSpec.PoolSpec.EnableCrushUpdates
 		}
 		// Pass the DeviceClass for the default cephBlockPool spec if specified
 		if manageCBPSpec.PoolSpec != nil && manageCBPSpec.PoolSpec.DeviceClass != "" {
-			cephBlockPool.Spec.PoolSpec.DeviceClass = manageCBPSpec.PoolSpec.DeviceClass
+			cephBlockPool.Spec.DeviceClass = manageCBPSpec.PoolSpec.DeviceClass
 		}
 		util.AddLabel(cephBlockPool, util.ForInternalUseOnlyLabelKey, "true")
 
@@ -164,7 +218,7 @@ func (o *ocsCephBlockPools) reconcileNFSCephBlockPool(r *StorageClusterReconcile
 		},
 	}
 
-	err := r.Client.Get(r.ctx, client.ObjectKeyFromObject(cephBlockPool), cephBlockPool)
+	err := r.Get(r.ctx, client.ObjectKeyFromObject(cephBlockPool), cephBlockPool)
 	if client.IgnoreNotFound(err) != nil {
 		return reconcile.Result{}, err
 	}
@@ -194,13 +248,13 @@ func (o *ocsCephBlockPools) reconcileNFSCephBlockPool(r *StorageClusterReconcile
 		}
 		// Pass the EnableCrushUpdates for the default cephBlockPool spec if specified
 		if manageCBPSpec.PoolSpec != nil && manageCBPSpec.PoolSpec.EnableCrushUpdates != nil {
-			cephBlockPool.Spec.PoolSpec.EnableCrushUpdates = manageCBPSpec.PoolSpec.EnableCrushUpdates
+			cephBlockPool.Spec.EnableCrushUpdates = manageCBPSpec.PoolSpec.EnableCrushUpdates
 		}
 		// Pass the DeviceClass for the default cephBlockPool spec if specified
 		if manageCBPSpec.PoolSpec != nil && manageCBPSpec.PoolSpec.DeviceClass != "" {
-			cephBlockPool.Spec.PoolSpec.DeviceClass = manageCBPSpec.PoolSpec.DeviceClass
+			cephBlockPool.Spec.DeviceClass = manageCBPSpec.PoolSpec.DeviceClass
 		}
-		cephBlockPool.Spec.PoolSpec.EnableRBDStats = true
+		cephBlockPool.Spec.EnableRBDStats = true
 		util.AddLabel(cephBlockPool, util.ForInternalUseOnlyLabelKey, "true")
 
 		return controllerutil.SetControllerReference(storageCluster, cephBlockPool, r.Scheme)
@@ -227,7 +281,7 @@ func (o *ocsCephBlockPools) reconcileNonResilientCephBlockPool(r *StorageCluster
 			},
 		}
 
-		err := r.Client.Get(r.ctx, client.ObjectKeyFromObject(cephBlockPool), cephBlockPool)
+		err := r.Get(r.ctx, client.ObjectKeyFromObject(cephBlockPool), cephBlockPool)
 		if client.IgnoreNotFound(err) != nil {
 			return reconcile.Result{}, err
 		}
@@ -288,6 +342,10 @@ func (o *ocsCephBlockPools) ensureCreated(r *StorageClusterReconciler, storageCl
 		return res, err
 	}
 
+	if res, err := o.reconcileCephMetadataBlockPool(r, storageCluster); err != nil || !res.IsZero() {
+		return res, err
+	}
+
 	if res, err := o.reconcileMgrCephBlockPool(r, storageCluster); err != nil || !res.IsZero() {
 		return res, err
 	}
@@ -312,6 +370,10 @@ func (o *ocsCephBlockPools) ensureDeleted(r *StorageClusterReconciler, storageCl
 
 	//Create cephBlockPool one by one
 	if res, err := o.reconcileCephBlockPool(r, storageCluster); err != nil || !res.IsZero() {
+		return res, err
+	}
+
+	if res, err := o.reconcileCephMetadataBlockPool(r, storageCluster); err != nil || !res.IsZero() {
 		return res, err
 	}
 
