@@ -8,7 +8,7 @@ COPY . .
 
 ARG LDFLAGS
 
-RUN go build -ldflags "$LDFLAGS" -tags netgo,osusergo -o ocs-operator main.go
+RUN go build -ldflags "$LDFLAGS" -tags netgo,osusergo -o ocs-operator cmd/main.go
 RUN go build -ldflags "$LDFLAGS" -tags netgo,osusergo -o provider-api services/provider/main.go
 RUN go build -tags netgo,osusergo -o onboarding-validation-keys-gen onboarding-validation-keys-generator/main.go
 

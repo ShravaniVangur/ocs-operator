@@ -9,7 +9,7 @@ import (
 
 	v1 "github.com/red-hat-storage/ocs-operator/api/v4/v1"
 	"github.com/red-hat-storage/ocs-operator/metrics/v4/internal/options"
-	"github.com/red-hat-storage/ocs-operator/v4/controllers/util"
+	"github.com/red-hat-storage/ocs-operator/v4/pkg/util"
 )
 
 type StorageClusterCollector struct {

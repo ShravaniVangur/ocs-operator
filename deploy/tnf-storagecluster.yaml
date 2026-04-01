@@ -1,0 +1,30 @@
+apiVersion: ocs.openshift.io/v1
+kind: StorageCluster
+metadata:
+  name: ocs-storagecluster
+  namespace: openshift-storage
+spec:
+  flexibleScaling: true
+  managedResources:
+    cephObjectStoreUsers:
+      reconcileStrategy: ignore
+    cephObjectStores:
+      reconcileStrategy: ignore
+  monDataDirHostPath: /var/lib/rook
+  multiCloudGateway:
+    reconcileStrategy: ignore
+  storageDeviceSets:
+    - config: {}
+      count: 1
+      dataPVCTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1
+          storageClassName: local-storage
+          volumeMode: Block
+      encrypted: false
+      name: ocs-deviceset
+      replica: 2

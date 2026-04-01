@@ -129,11 +129,11 @@ verify-generated: update-generated
 
 # ARGS is used to pass flags
 # `make run ARGS="--zap-devel"` is parsed as
-# `go run ./main.go --zap-devel`
+# `go run ./cmd/main.go --zap-devel`
 run: manifests generate
 	go fmt ./...
 	go vet ./...
-	go run ./main.go $(ARGS)
+	go run ./cmd/main.go $(ARGS)
 
 # find or download controller-gen if necessary
 controller-gen:

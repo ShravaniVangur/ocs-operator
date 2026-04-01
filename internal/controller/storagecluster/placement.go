@@ -1,0 +1,227 @@
+package storagecluster
+
+import (
+	"sort"
+
+	ocsv1 "github.com/red-hat-storage/ocs-operator/api/v4/v1"
+	"github.com/red-hat-storage/ocs-operator/v4/pkg/defaults"
+	"github.com/red-hat-storage/ocs-operator/v4/pkg/util"
+
+	rookCephv1 "github.com/rook/rook/pkg/apis/ceph.rook.io/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+// getPlacement returns placement configuration for ceph components with appropriate topology
+func getPlacement(sc *ocsv1.StorageCluster, component string) rookCephv1.Placement {
+	var placement rookCephv1.Placement
+	defaultPlacement := defaults.DaemonPlacements[component]
+	specifiedPlacement, specified := sc.Spec.Placement[rookCephv1.KeyType(component)]
+	// If specified placement is present but empty, the intention is to have no placement
+	if specified && isPlacementEmpty(specifiedPlacement) {
+		return specifiedPlacement
+	}
+	// Placement specification for osd & prepareosd are handled at the deviceSet level
+	if component == "osd" || component == "prepareosd" {
+		specified = false
+	}
+
+	// In noobaa-standalone mode or external mode the default ocs labels are not added to the nodes
+	// so we should not add the default ocs node affinity for these modes
+	if (sc.Spec.MultiCloudGateway != nil && ReconcileStrategy(sc.Spec.MultiCloudGateway.ReconcileStrategy) == ReconcileStrategyStandalone) ||
+		sc.Spec.ExternalStorage.Enable {
+		defaultPlacement.NodeAffinity = nil
+	}
+
+	// If the StorageCluster specifies a label selector, use it & do not use the default node affinity
+	if sc.Spec.LabelSelector != nil {
+		defaultPlacement.NodeAffinity = nil
+		reqs := convertLabelToNodeSelectorRequirements(*sc.Spec.LabelSelector)
+		if len(reqs) != 0 {
+			appendNodeRequirements(&defaultPlacement, reqs...)
+		}
+	}
+
+	// If some placement is specified, merge it with the default placement
+	if specified {
+		placement = mergePlacements(defaultPlacement, specifiedPlacement)
+	} else {
+		placement = defaultPlacement
+	}
+
+	if component == "arbiter" && !sc.Spec.Arbiter.DisableMasterNodeToleration {
+		placement.Tolerations = append(placement.Tolerations, defaults.MasterNodeToleration)
+	}
+
+	topologyKey := sc.Status.FailureDomainKey
+	if !specified || specifiedPlacement.TopologySpreadConstraints == nil {
+		// Set the topology key and label selector values on the TSCs as required
+		switch component {
+		case "mon":
+			placement.TopologySpreadConstraints[0].TopologyKey = topologyKey
+		case "osd":
+			placement.TopologySpreadConstraints[0].TopologyKey = topologyKey
+			if topologyKey != corev1.LabelHostname {
+				addSoftTscAtHostLevel(&placement)
+			}
+		case "prepareosd":
+			placement.TopologySpreadConstraints[0].TopologyKey = topologyKey
+			if topologyKey != corev1.LabelHostname {
+				addSoftTscAtHostLevel(&placement)
+			}
+		case "mds":
+			placement.TopologySpreadConstraints[0].TopologyKey = topologyKey
+			placement.TopologySpreadConstraints[0].LabelSelector.MatchExpressions[0].Values = []string{util.GenerateNameForCephFilesystem(sc.Name)}
+		case "rgw":
+			placement.TopologySpreadConstraints[0].TopologyKey = topologyKey
+			placement.TopologySpreadConstraints[0].LabelSelector.MatchExpressions[0].Values = []string{util.GenerateNameForCephObjectStore(sc)}
+		case "nfs":
+			placement.TopologySpreadConstraints[0].TopologyKey = topologyKey
+			placement.TopologySpreadConstraints[0].LabelSelector.MatchExpressions[0].Values = []string{util.GenerateNameForCephNFS(sc)}
+		}
+	}
+
+	return placement
+}
+
+// mergePlacements merges the default and user-specified placements
+// While merging, for the sections which are not specified, we will use the default placement
+func mergePlacements(defaultPlacement rookCephv1.Placement, specifiedPlacement rookCephv1.Placement) rookCephv1.Placement {
+	merged := rookCephv1.Placement{}
+
+	// NodeAffinity
+	if specifiedPlacement.NodeAffinity != nil {
+		merged.NodeAffinity = specifiedPlacement.NodeAffinity.DeepCopy()
+	} else if defaultPlacement.NodeAffinity != nil {
+		merged.NodeAffinity = defaultPlacement.NodeAffinity.DeepCopy()
+	}
+
+	// PodAffinity
+	if specifiedPlacement.PodAffinity != nil {
+		merged.PodAffinity = specifiedPlacement.PodAffinity.DeepCopy()
+	} else if defaultPlacement.PodAffinity != nil {
+		merged.PodAffinity = defaultPlacement.PodAffinity.DeepCopy()
+	}
+
+	// PodAntiAffinity
+	if specifiedPlacement.PodAntiAffinity != nil {
+		merged.PodAntiAffinity = specifiedPlacement.PodAntiAffinity.DeepCopy()
+	} else if defaultPlacement.PodAntiAffinity != nil {
+		merged.PodAntiAffinity = defaultPlacement.PodAntiAffinity.DeepCopy()
+	}
+
+	// Tolerations - use additive merge: append specified tolerations to default tolerations.
+	// appendUniqueTolerations handles nil slices correctly.
+	merged.Tolerations = appendUniqueTolerations(defaultPlacement.Tolerations, specifiedPlacement.Tolerations)
+
+	// TopologySpreadConstraints
+	if specifiedPlacement.TopologySpreadConstraints != nil {
+		merged.TopologySpreadConstraints = specifiedPlacement.TopologySpreadConstraints
+	} else if defaultPlacement.TopologySpreadConstraints != nil {
+		merged.TopologySpreadConstraints = defaultPlacement.TopologySpreadConstraints
+	}
+
+	return merged
+}
+
+// appendUniqueTolerations appends tolerations from 'additional' to 'base', avoiding duplicates.
+// A toleration is considered duplicate if it has the same Key, Operator, Value, and Effect.
+func appendUniqueTolerations(base, additional []corev1.Toleration) []corev1.Toleration {
+	if len(additional) == 0 {
+		return base
+	}
+	if len(base) == 0 {
+		return additional
+	}
+
+	result := make([]corev1.Toleration, len(base))
+	copy(result, base)
+
+	for _, tol := range additional {
+		if !containsToleration(result, tol) {
+			result = append(result, tol)
+		}
+	}
+	return result
+}
+
+// containsToleration checks if a toleration slice contains a specific toleration
+func containsToleration(tolerations []corev1.Toleration, tol corev1.Toleration) bool {
+	for _, t := range tolerations {
+		if t.Key == tol.Key && t.Operator == tol.Operator && t.Value == tol.Value && t.Effect == tol.Effect {
+			return true
+		}
+	}
+	return false
+}
+
+// convertLabelToNodeSelectorRequirements returns a NodeSelectorRequirement list from a given LabelSelector
+func convertLabelToNodeSelectorRequirements(labelSelector metav1.LabelSelector) []corev1.NodeSelectorRequirement {
+	reqs := []corev1.NodeSelectorRequirement{}
+
+	// Sort keys for deterministic ordering to avoid triggering unnecessary updates.
+	keys := make([]string, 0, len(labelSelector.MatchLabels))
+	for key := range labelSelector.MatchLabels {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		value := labelSelector.MatchLabels[key]
+		reqs = append(reqs, corev1.NodeSelectorRequirement{
+			Key:      key,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{value},
+		})
+	}
+	numIter := len(labelSelector.MatchExpressions)
+	for i := 0; i < numIter; i++ {
+		req := corev1.NodeSelectorRequirement{}
+		req.Key = labelSelector.MatchExpressions[i].Key
+		req.Operator = corev1.NodeSelectorOperator(labelSelector.MatchExpressions[i].Operator)
+		req.Values = labelSelector.MatchExpressions[i].Values
+		reqs = append(reqs, req)
+	}
+	return reqs
+}
+
+func appendNodeRequirements(placement *rookCephv1.Placement, reqs ...corev1.NodeSelectorRequirement) {
+	if placement.NodeAffinity == nil {
+		placement.NodeAffinity = &corev1.NodeAffinity{}
+	}
+	if placement.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution == nil {
+		placement.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution = &corev1.NodeSelector{}
+	}
+	nodeSelector := placement.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution
+	if len(nodeSelector.NodeSelectorTerms) == 0 {
+		nodeSelector.NodeSelectorTerms = append(nodeSelector.NodeSelectorTerms, corev1.NodeSelectorTerm{})
+	}
+	nodeSelector.NodeSelectorTerms[0].MatchExpressions = append(nodeSelector.NodeSelectorTerms[0].MatchExpressions, reqs...)
+}
+
+func isPlacementEmpty(placement rookCephv1.Placement) bool {
+	return placement.NodeAffinity == nil &&
+		placement.PodAffinity == nil && placement.PodAntiAffinity == nil &&
+		len(placement.Tolerations) == 0 && len(placement.TopologySpreadConstraints) == 0
+}
+
+func addSoftTscAtHostLevel(placement *rookCephv1.Placement) {
+	newTSC := placement.TopologySpreadConstraints[0]
+	newTSC.TopologyKey = corev1.LabelHostname
+	newTSC.WhenUnsatisfiable = corev1.ScheduleAnyway
+	placement.TopologySpreadConstraints = append(placement.TopologySpreadConstraints, newTSC)
+}
+
+// MatchingLabelsSelector filters the list/delete operation on the given label
+// selector (or index in the case of cached lists). A struct is used because
+// labels.Selector is an interface, which cannot be aliased.
+type MatchingLabelsSelector struct {
+	labels.Selector
+}
+
+// ApplyToList applies this configuration to the given list options.
+// This is implemented by MatchingLabelsSelector which implements ListOption interface.
+func (m MatchingLabelsSelector) ApplyToList(opts *client.ListOptions) {
+	opts.LabelSelector = m
+}

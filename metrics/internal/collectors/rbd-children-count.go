@@ -7,7 +7,7 @@ import (
 	ocsv1alpha1 "github.com/red-hat-storage/ocs-operator/api/v4/v1alpha1"
 	internalcache "github.com/red-hat-storage/ocs-operator/metrics/v4/internal/cache"
 	"github.com/red-hat-storage/ocs-operator/metrics/v4/internal/options"
-	"github.com/red-hat-storage/ocs-operator/v4/controllers/defaults"
+	"github.com/red-hat-storage/ocs-operator/v4/pkg/defaults"
 	"k8s.io/apimachinery/pkg/fields"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
