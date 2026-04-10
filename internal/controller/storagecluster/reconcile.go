@@ -110,7 +110,7 @@ var storageClusterFinalizer = "storagecluster.ocs.openshift.io"
 // +kubebuilder:rbac:groups=config.openshift.io,resources=infrastructures;networks,verbs=get;list;watch
 // +kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions;networks,verbs=get;list;watch
 // +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch;create;update
-// +kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=create;delete;list;watch;update
+// +kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;create;delete;list;watch;update
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;create;update
 // +kubebuilder:rbac:groups=operators.coreos.com,resources=operatorconditions,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=quota.openshift.io,resources=clusterresourcequotas,verbs=get;list;watch;create;update;delete
@@ -125,6 +125,8 @@ var storageClusterFinalizer = "storagecluster.ocs.openshift.io"
 // +kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,resourceNames=odf-blackbox-scc,verbs=use;get;create;update;patch;delete
 // +kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,resourceNames=hostnetwork-v2,verbs=use
 // +kubebuilder:rbac:groups=csiaddons.openshift.io,resources=networkfenceclasses,verbs=get;list;watch;create;update;delete
+// +kubebuilder:rbac:groups=csiaddons.openshift.io,resources=csiaddonsnodes,verbs=get;list
+// +kubebuilder:rbac:urls=/metrics;/healthz;/readyz,verbs=get
 // +kubebuilder:rbac:groups=console.openshift.io,resources=consoleplugins,verbs=get;watch;update
 
 // Reconcile reads that state of the cluster for a StorageCluster object and makes changes based on the state read
@@ -217,7 +219,7 @@ func (r *StorageClusterReconciler) validateStorageClusterSpec(instance *ocsv1.St
 	if err := versionCheck(instance, r.Log); err != nil {
 		r.Log.Error(err, "Failed to validate StorageCluster version.", "StorageCluster", klog.KRef(instance.Namespace, instance.Name))
 		r.recorder.ReportIfNotPresent(instance, corev1.EventTypeWarning, util.EventReasonValidationFailed, err.Error())
-		instance.Status.Phase = util.PhaseError
+		instance.Status.Phase = ocsv1.PhaseError
 		reason := util.EventReasonValidationFailed
 		message := err.Error()
 		util.SetVersionMismatchCondition(&instance.Status.Conditions, corev1.ConditionTrue, reason, message)
@@ -236,7 +238,7 @@ func (r *StorageClusterReconciler) validateStorageClusterSpec(instance *ocsv1.St
 		if err := r.validateStorageDeviceSets(instance); err != nil {
 			r.Log.Error(err, "Failed to validate StorageDeviceSets.", "StorageCluster", klog.KRef(instance.Namespace, instance.Name))
 			r.recorder.ReportIfNotPresent(instance, corev1.EventTypeWarning, util.EventReasonValidationFailed, err.Error())
-			instance.Status.Phase = util.PhaseError
+			instance.Status.Phase = ocsv1.PhaseError
 			if updateErr := r.Status().Update(context.TODO(), instance); updateErr != nil {
 				r.Log.Error(updateErr, "Failed to update StorageCluster.", "StorageCluster", klog.KRef(instance.Namespace, instance.Name))
 				return updateErr
@@ -248,7 +250,7 @@ func (r *StorageClusterReconciler) validateStorageClusterSpec(instance *ocsv1.St
 	if err := validateArbiterSpec(instance); err != nil {
 		r.Log.Error(err, "Failed to validate ArbiterSpec.", "StorageCluster", klog.KRef(instance.Namespace, instance.Name))
 		r.recorder.ReportIfNotPresent(instance, corev1.EventTypeWarning, util.EventReasonValidationFailed, err.Error())
-		instance.Status.Phase = util.PhaseError
+		instance.Status.Phase = ocsv1.PhaseError
 		if updateErr := r.Status().Update(context.TODO(), instance); updateErr != nil {
 			r.Log.Error(updateErr, "Could not update StorageCluster.", "StorageCluster", klog.KRef(instance.Namespace, instance.Name))
 			return updateErr
@@ -259,7 +261,7 @@ func (r *StorageClusterReconciler) validateStorageClusterSpec(instance *ocsv1.St
 	if err := validateOverprovisionControlSpec(instance); err != nil {
 		r.Log.Error(err, "Failed to validate OverprovisionControlSpec.", "StorageCluster", klog.KRef(instance.Namespace, instance.Name))
 		r.recorder.ReportIfNotPresent(instance, corev1.EventTypeWarning, util.EventReasonValidationFailed, err.Error())
-		instance.Status.Phase = util.PhaseError
+		instance.Status.Phase = ocsv1.PhaseError
 		if updateErr := r.Status().Update(context.TODO(), instance); updateErr != nil {
 			r.Log.Error(updateErr, "Could not update StorageCluster.", "StorageCluster", klog.KRef(instance.Namespace, instance.Name))
 			return updateErr
@@ -270,7 +272,7 @@ func (r *StorageClusterReconciler) validateStorageClusterSpec(instance *ocsv1.St
 	if err := validateCustomStorageClassNames(instance); err != nil {
 		r.Log.Error(err, "Failed to validate custom StorageClassNames.", "StorageCluster", klog.KRef(instance.Namespace, instance.Name))
 		r.recorder.ReportIfNotPresent(instance, corev1.EventTypeWarning, util.EventReasonValidationFailed, err.Error())
-		instance.Status.Phase = util.PhaseError
+		instance.Status.Phase = ocsv1.PhaseError
 		if updateErr := r.Status().Update(context.TODO(), instance); updateErr != nil {
 			r.Log.Error(updateErr, "Could not update StorageCluster.", "StorageCluster", klog.KRef(instance.Namespace, instance.Name))
 			return updateErr
@@ -371,19 +373,19 @@ func (r *StorageClusterReconciler) reconcilePhases(
 	case "":
 		isActive := r.isActiveStorageCluster(instance)
 		if !isActive {
-			instance.Status.Phase = util.PhaseIgnored
+			instance.Status.Phase = ocsv1.PhaseIgnored
 			return reconcile.Result{}, nil
 		}
-	case util.PhaseIgnored:
+	case ocsv1.PhaseIgnored:
 		return reconcile.Result{}, nil
 	}
 
-	if instance.Status.Phase != util.PhaseReady &&
-		instance.Status.Phase != util.PhaseClusterExpanding &&
-		instance.Status.Phase != util.PhaseDeleting &&
-		instance.Status.Phase != util.PhaseOnboarding &&
-		instance.Status.Phase != util.PhaseConnecting {
-		instance.Status.Phase = util.PhaseProgressing
+	if instance.Status.Phase != ocsv1.PhaseReady &&
+		instance.Status.Phase != ocsv1.PhaseClusterExpanding &&
+		instance.Status.Phase != ocsv1.PhaseDeleting &&
+		instance.Status.Phase != ocsv1.PhaseOnboarding &&
+		instance.Status.Phase != ocsv1.PhaseConnecting {
+		instance.Status.Phase = ocsv1.PhaseProgressing
 	}
 
 	// Add conditions if there are none
@@ -420,7 +422,7 @@ func (r *StorageClusterReconciler) reconcilePhases(
 
 	} else {
 		// The object is marked for deletion
-		instance.Status.Phase = util.PhaseDeleting
+		instance.Status.Phase = ocsv1.PhaseDeleting
 
 		if contains(instance.GetFinalizers(), storageClusterFinalizer) {
 			if res, err := r.deleteResources(instance); err != nil {
@@ -518,6 +520,7 @@ func (r *StorageClusterReconciler) reconcilePhases(
 				&ocsJobTemplates{},
 				&ocsCephRbdMirrors{},
 				&odfInfoConfig{},
+				&ocsS3EndpointsConfig{},
 			}
 		} else {
 			// noobaa-only ensure functions
@@ -534,7 +537,8 @@ func (r *StorageClusterReconciler) reconcilePhases(
 			&ocsExternalResources{},
 			&ocsStorageQuota{},
 			&ocsSnapshotClass{},
-			&ocsGroupSnapshotClass{},
+			// TODO:enable vgsc after GA of API
+			// &ocsGroupSnapshotClass{},
 			&ocsOdfGroupSnapshotClass{},
 			&ocsNetworkFenceClass{},
 			&ocsNoobaaSystem{},
@@ -544,24 +548,24 @@ func (r *StorageClusterReconciler) reconcilePhases(
 
 	for _, obj := range objs {
 		returnRes, returnErr := obj.ensureCreated(r, instance)
-		if r.phase == util.PhaseClusterExpanding {
+		if r.phase == ocsv1.PhaseClusterExpanding {
 			message := "StorageCluster is expanding"
 			reason := "Expanding"
-			instance.Status.Phase = util.PhaseClusterExpanding
+			instance.Status.Phase = ocsv1.PhaseClusterExpanding
 			conditionsv1.SetStatusCondition(&instance.Status.Conditions, conditionsv1.Condition{
 				Type:    conditionsv1.ConditionUpgradeable,
 				Status:  corev1.ConditionFalse,
 				Reason:  reason,
 				Message: message,
 			})
-		} else if instance.Status.Phase != util.PhaseReady &&
-			instance.Status.Phase != util.PhaseOnboarding &&
-			instance.Status.Phase != util.PhaseConnecting {
-			instance.Status.Phase = util.PhaseProgressing
+		} else if instance.Status.Phase != ocsv1.PhaseReady &&
+			instance.Status.Phase != ocsv1.PhaseOnboarding &&
+			instance.Status.Phase != ocsv1.PhaseConnecting {
+			instance.Status.Phase = ocsv1.PhaseProgressing
 		}
 		// Make operator not upgradable if the StorageCluster is not ready
 		// Do this before returning the reconcile error or result
-		if instance.Status.Phase != util.PhaseReady {
+		if instance.Status.Phase != ocsv1.PhaseReady {
 			reason := "StorageClusterNotReady"
 			message := "StorageCluster is not ready"
 
@@ -578,14 +582,14 @@ func (r *StorageClusterReconciler) reconcilePhases(
 			message := fmt.Sprintf("Error while reconciling: %v", returnErr)
 			util.SetErrorCondition(&instance.Status.Conditions, reason, message)
 
-			if instance.Status.Phase != util.PhaseOnboarding {
+			if instance.Status.Phase != ocsv1.PhaseOnboarding {
 				// if the error was due to skipped storage classes
 				// instead of error phase we will set it to progressing
 				if strings.Contains(returnErr.Error(), storageClassSkippedError) {
-					instance.Status.Phase = util.PhaseProgressing
+					instance.Status.Phase = ocsv1.PhaseProgressing
 					return reconcile.Result{Requeue: true}, nil
 				}
-				instance.Status.Phase = util.PhaseError
+				instance.Status.Phase = ocsv1.PhaseError
 			}
 
 			// don't want to overwrite the actual reconcile failure
@@ -605,13 +609,13 @@ func (r *StorageClusterReconciler) reconcilePhases(
 				reason := ocsv1.ReconcileFailed
 				message := err.Error()
 				util.SetProgressingCondition(&instance.Status.Conditions, reason, message)
-				instance.Status.Phase = util.PhaseProgressing
+				instance.Status.Phase = ocsv1.PhaseProgressing
 				return reconcile.Result{Requeue: true}, nil
 			case errResourceProfileChangeFailed:
 				reason := ocsv1.ReconcileFailed
 				message := err.Error()
 				util.SetErrorCondition(&instance.Status.Conditions, reason, message)
-				instance.Status.Phase = util.PhaseError
+				instance.Status.Phase = ocsv1.PhaseError
 			}
 			return reconcile.Result{}, err
 		}
@@ -629,8 +633,8 @@ func (r *StorageClusterReconciler) reconcilePhases(
 
 		// If no operator whose conditions we are watching reports an error, then it is safe
 		// to set upgradeable to true.
-		if instance.Status.Phase != util.PhaseClusterExpanding {
-			instance.Status.Phase = util.PhaseReady
+		if instance.Status.Phase != ocsv1.PhaseClusterExpanding {
+			instance.Status.Phase = ocsv1.PhaseReady
 
 			var returnErr error
 			var notUpgradeableReasons, notUpgradeableMessages []string
@@ -690,13 +694,13 @@ func (r *StorageClusterReconciler) reconcilePhases(
 				return reconcile.Result{}, returnErr
 			}
 		}
-		if instance.Status.Phase != util.PhaseClusterExpanding {
+		if instance.Status.Phase != ocsv1.PhaseClusterExpanding {
 			if conditionsv1.IsStatusConditionTrue(instance.Status.Conditions, conditionsv1.ConditionProgressing) ||
 				conditionsv1.IsStatusConditionFalse(instance.Status.Conditions, conditionsv1.ConditionAvailable) {
-				instance.Status.Phase = util.PhaseProgressing
+				instance.Status.Phase = ocsv1.PhaseProgressing
 			}
 			if conditionsv1.IsStatusConditionTrue(instance.Status.Conditions, conditionsv1.ConditionDegraded) {
-				instance.Status.Phase = util.PhaseError
+				instance.Status.Phase = ocsv1.PhaseError
 			}
 		}
 	}
@@ -868,7 +872,7 @@ func (r *StorageClusterReconciler) isStorageClusterNotIgnored(
 
 	// There are many StorageClusters. Check if this is Active
 	for n, storageCluster := range storageClusters {
-		if storageCluster.Status.Phase != util.PhaseIgnored &&
+		if storageCluster.Status.Phase != ocsv1.PhaseIgnored &&
 			storageCluster.Name != instance.Name {
 			// Both StorageClusters are in creation phase
 			// Tiebreak using CreationTimestamp and Alphanumeric ordering

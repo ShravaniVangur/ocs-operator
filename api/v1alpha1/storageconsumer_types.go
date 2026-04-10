@@ -165,6 +165,14 @@ type ClientStatus struct {
 	// +optional
 	StorageQuotaUtilizationRatio float64 `json:"storageQuotaUtilizationRatio,omitempty"`
 
+	// CephFsPvCount is the number of CephFS PVs on the connected client
+	// +optional
+	CephFsPvCount uint32 `json:"cephFsPvCount,omitempty"`
+
+	// CephFsVolumeSnapshotContentCount is the number of CephFS VolumeSnapshotContents on the connected client
+	// +optional
+	CephFsVolumeSnapshotContentCount uint32 `json:"cephFsVolumeSnapshotContentCount,omitempty"`
+
 	// ID is the k8s UID of connected storageclient
 	// +optional
 	ID string `json:"clientId,omitempty"`

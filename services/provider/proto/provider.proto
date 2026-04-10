@@ -41,6 +41,10 @@ service OCSProvider {
   // Notify RPC call for action on for client cluster
   rpc Notify(NotifyRequest)
   returns (NotifyResponse) {}
+
+  // GetClientAlerts RPC call to get firing alerts relevant to a specific storage consumer
+  rpc GetClientAlerts(GetClientAlertsRequest)
+  returns (GetClientAlertsResponse) {}
 }
 
 // OnboardConsumerRequest holds the required information to validate the consumer and create StorageConsumer
@@ -82,6 +86,21 @@ message GetDesiredClientStateRequest{
 message KubeObject {
     // Bytes holds the serialized bytes of the kube object
     bytes bytes  = 1;
+    // specifies the operation that the client needs to perform with the resource
+    kubeClientOp op = 2;
+    // an optional sub-resource that is needed to specified for a subset of the supported client operations
+    optional subResource subResource = 3;
+}
+
+enum kubeClientOp {
+  OPERATION_UNSPECIFIED = 0;
+  CREATE_OR_UPDATE = 1;
+  UPDATE_SUB_RESOURCE = 2;
+}
+
+enum subResource {
+  SUB_RESOURCE_UNSPECIFIED = 0;
+  SUB_RESOURCE_STATUS = 1;
 }
 
 // RbdDriverRequirements holds the desired spec of the rbd driver
@@ -154,7 +173,10 @@ message ReportStatusRequest{
     string clientID = 8;
     // ocs-client-operator deployed namespace
     string clientOperatorNamespace = 9;
-
+    // cephFsPVCount is the number of CephFS PersistentVolumes on the client cluster
+    uint32 cephFsPVCount = 10;
+    // cephFsVolumeSnapshotContentCount is the number of CephFS VolumeSnapshotContent resources
+    uint32 cephFsVolumeSnapshotContentCount = 11;
 }
 
 message ReportStatusResponse{
@@ -264,4 +286,26 @@ message NotifyRequest {
 // NotifyResponse holds the response for the Notify API request
 message NotifyResponse {
 
+}
+
+// GetClientAlertsRequest holds the required information to get alerts for a storage consumer
+message GetClientAlertsRequest {
+  // K8s UID (UUID) of the consumer cluster
+  string storageConsumerUUID = 1;
+}
+
+// AlertInfo holds information about a single firing alert
+message AlertInfo {
+  // alertName is the name of the alert rule
+  string alertName = 1;
+  // labels holds all the labels associated with the alert
+  map<string, string> labels = 2;
+  // value is the numeric value of the alert expression
+  double value = 3;
+}
+
+// GetClientAlertsResponse holds the response for the GetClientAlerts API request
+message GetClientAlertsResponse {
+  // alerts is the list of firing alerts relevant to the storage consumer
+  repeated AlertInfo alerts = 1;
 }

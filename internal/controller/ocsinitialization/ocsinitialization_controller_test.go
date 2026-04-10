@@ -13,7 +13,6 @@ import (
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	v1 "github.com/red-hat-storage/ocs-operator/api/v4/v1"
 	"github.com/red-hat-storage/ocs-operator/v4/pkg/platform"
-	statusutil "github.com/red-hat-storage/ocs-operator/v4/pkg/util"
 	"github.com/stretchr/testify/assert"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -206,7 +205,7 @@ func TestNonWatchedResourceFound(t *testing.T) {
 		actual := &v1.OCSInitialization{}
 		err = reconciler.Get(ctx, request.NamespacedName, actual)
 		assert.NoErrorf(t, err, "[%s]: failed GET of actual resource", tc.label)
-		assert.Equalf(t, statusutil.PhaseIgnored, actual.Status.Phase, "[%s]: failed to update phase of non watched resource that already exists OCS:\n%v", tc.label, actual)
+		assert.Equalf(t, v1.PhaseIgnored, actual.Status.Phase, "[%s]: failed to update phase of non watched resource that already exists OCS:\n%v", tc.label, actual)
 	}
 }
 

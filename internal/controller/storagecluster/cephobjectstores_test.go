@@ -2,6 +2,7 @@ package storagecluster
 
 import (
 	"context"
+	"encoding/base64"
 	"testing"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -10,7 +11,10 @@ import (
 	"github.com/red-hat-storage/ocs-operator/v4/pkg/platform"
 	cephv1 "github.com/rook/rook/pkg/apis/ceph.rook.io/v1"
 	"github.com/stretchr/testify/assert"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
@@ -122,4 +126,213 @@ func TestGetCephObjectStoreGatewayInstances(t *testing.T) {
 		actualCephObjectStoreGatewayInstances := getCephObjectStoreGatewayInstances(c.sc)
 		assert.Equal(t, c.expectedCephObjectStoreGatewayInstances, actualCephObjectStoreGatewayInstances)
 	}
+}
+
+func TestSetSTSOptions(t *testing.T) {
+	testCases := []struct {
+		name            string
+		enableSTS       bool
+		expectRgwConfig bool
+		expectSecret    bool
+		expectSecretRef bool
+	}{
+		{
+			name:            "STS enabled - should configure all options",
+			enableSTS:       true,
+			expectRgwConfig: true,
+			expectSecret:    true,
+			expectSecretRef: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Setup test environment
+			var objects []runtime.Object
+			sc := &api.StorageCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-storagecluster",
+					Namespace: "test-namespace",
+				},
+				Spec: api.StorageClusterSpec{
+					ManagedResources: api.ManagedResourcesSpec{
+						CephObjectStores: api.ManageCephObjectStores{
+							EnableSTS: tc.enableSTS,
+						},
+					},
+				},
+			}
+			objects = append(objects, sc)
+
+			reconciler := createFakeStorageClusterReconciler(t, objects...)
+
+			// Create a CephObjectStore instance
+			cos := &cephv1.CephObjectStore{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-objectstore",
+					Namespace: sc.Namespace,
+				},
+				Spec: cephv1.ObjectStoreSpec{
+					Gateway: cephv1.GatewaySpec{},
+				},
+			}
+
+			if tc.enableSTS {
+				// Call setSTSOptions
+				err := reconciler.setSTSOptions(cos, sc)
+				assert.NoError(t, err)
+
+				// Verify rgwConfig is set
+				if tc.expectRgwConfig {
+					assert.NotNil(t, cos.Spec.Gateway.RgwConfig)
+					assert.Equal(t, "true", cos.Spec.Gateway.RgwConfig["rgw_s3_auth_use_sts"])
+				}
+
+				// Verify secret was created
+				if tc.expectSecret {
+					secretName := "sts-key-test-objectstore"
+					secret := &corev1.Secret{}
+					err := reconciler.Get(context.TODO(), types.NamespacedName{
+						Name:      secretName,
+						Namespace: sc.Namespace,
+					}, secret)
+					assert.NoError(t, err)
+					assert.NotNil(t, secret)
+					assert.Equal(t, corev1.SecretTypeOpaque, secret.Type)
+
+					// Verify secret contains the STS key
+					stsKey, exists := secret.Data["rgw_sts_key"]
+					assert.True(t, exists)
+					assert.NotEmpty(t, stsKey)
+
+					// Verify the key is valid base64
+					_, err = base64.StdEncoding.DecodeString(string(stsKey))
+					assert.NoError(t, err)
+
+					// Verify owner reference is set
+					assert.Equal(t, 1, len(secret.OwnerReferences))
+					assert.Equal(t, sc.Name, secret.OwnerReferences[0].Name)
+				}
+
+				// Verify RgwConfigFromSecret is set
+				if tc.expectSecretRef {
+					assert.NotNil(t, cos.Spec.Gateway.RgwConfigFromSecret)
+					secretSelector, exists := cos.Spec.Gateway.RgwConfigFromSecret["rgw_sts_key"]
+					assert.True(t, exists)
+					assert.Equal(t, "sts-key-test-objectstore", secretSelector.Name)
+					assert.Equal(t, "rgw_sts_key", secretSelector.Key)
+				}
+			}
+		})
+	}
+}
+
+func TestSetSTSOptionsIdempotency(t *testing.T) {
+	// Setup test environment
+	var objects []runtime.Object
+	sc := &api.StorageCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-storagecluster",
+			Namespace: "test-namespace",
+		},
+		Spec: api.StorageClusterSpec{
+			ManagedResources: api.ManagedResourcesSpec{
+				CephObjectStores: api.ManageCephObjectStores{
+					EnableSTS: true,
+				},
+			},
+		},
+	}
+	objects = append(objects, sc)
+
+	reconciler := createFakeStorageClusterReconciler(t, objects...)
+
+	cos := &cephv1.CephObjectStore{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-objectstore",
+			Namespace: sc.Namespace,
+		},
+		Spec: cephv1.ObjectStoreSpec{
+			Gateway: cephv1.GatewaySpec{},
+		},
+	}
+
+	// Call setSTSOptions first time
+	err := reconciler.setSTSOptions(cos, sc)
+	assert.NoError(t, err)
+
+	// Get the secret created
+	secretName := "sts-key-test-objectstore"
+	secret1 := &corev1.Secret{}
+	err = reconciler.Get(context.TODO(), types.NamespacedName{
+		Name:      secretName,
+		Namespace: sc.Namespace,
+	}, secret1)
+	assert.NoError(t, err)
+	originalKey := string(secret1.Data["rgw_sts_key"])
+
+	// Call setSTSOptions second time (should be idempotent)
+	err = reconciler.setSTSOptions(cos, sc)
+	assert.NoError(t, err)
+
+	// Verify secret still exists and key hasn't changed
+	secret2 := &corev1.Secret{}
+	err = reconciler.Get(context.TODO(), types.NamespacedName{
+		Name:      secretName,
+		Namespace: sc.Namespace,
+	}, secret2)
+	assert.NoError(t, err)
+	currentKey := string(secret2.Data["rgw_sts_key"])
+
+	// The key should remain the same (idempotent behavior)
+	assert.Equal(t, originalKey, currentKey, "Secret key should not change on subsequent calls")
+}
+
+func TestNewCephObjectStoreInstancesWithSTS(t *testing.T) {
+	platform.SetFakePlatformInstanceForTesting(true, configv1.BareMetalPlatformType)
+	defer platform.UnsetFakePlatformInstanceForTesting()
+
+	var objects []runtime.Object
+	sc := &api.StorageCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-storagecluster",
+			Namespace: "test-namespace",
+		},
+		Spec: api.StorageClusterSpec{
+			ManagedResources: api.ManagedResourcesSpec{
+				CephObjectStores: api.ManageCephObjectStores{
+					EnableSTS: true,
+				},
+			},
+		},
+	}
+	objects = append(objects, sc)
+
+	reconciler := createFakeStorageClusterReconciler(t, objects...)
+
+	// Create CephObjectStore instances
+	cephObjectStores, err := reconciler.newCephObjectStoreInstances(sc, nil)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, cephObjectStores)
+
+	// Verify STS configuration is applied
+	cos := cephObjectStores[0]
+	assert.NotNil(t, cos.Spec.Gateway.RgwConfig)
+	assert.Equal(t, "true", cos.Spec.Gateway.RgwConfig["rgw_s3_auth_use_sts"])
+
+	assert.NotNil(t, cos.Spec.Gateway.RgwConfigFromSecret)
+	secretSelector, exists := cos.Spec.Gateway.RgwConfigFromSecret["rgw_sts_key"]
+	assert.True(t, exists)
+	assert.Contains(t, secretSelector.Name, "sts-key-")
+	assert.Equal(t, "rgw_sts_key", secretSelector.Key)
+
+	// Verify the secret was created
+	secretName := secretSelector.Name
+	secret := &corev1.Secret{}
+	err = reconciler.Get(context.TODO(), types.NamespacedName{
+		Name:      secretName,
+		Namespace: sc.Namespace,
+	}, secret)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, secret.Data["rgw_sts_key"])
 }

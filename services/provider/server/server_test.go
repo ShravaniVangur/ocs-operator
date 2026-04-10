@@ -3,8 +3,14 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	ocsv1a1 "github.com/red-hat-storage/ocs-operator/api/v4/v1alpha1"
 	pb "github.com/red-hat-storage/ocs-operator/services/provider/api/v4"
@@ -108,7 +114,7 @@ func TestGetKubeResourcesForClass(t *testing.T) {
 
 	objIdxByName := make(map[string]int, len(objs))
 	for idx, obj := range objs {
-		objIdxByName[obj.GetName()] = idx
+		objIdxByName[obj.kubeObject.GetName()] = idx
 	}
 
 	for _, expName := range []string{"class-1", "class-2"} {
@@ -122,8 +128,8 @@ func TestGetKubeResourcesForClass(t *testing.T) {
 			gotObj := objs[idx]
 			// except the name the whole object should be deep equal
 			wantObj.Name = expName
-			if !equality.Semantic.DeepEqual(gotObj, wantObj) {
-				t.Fatalf("expected %v to be deep equal to %v", gotObj, wantObj)
+			if !equality.Semantic.DeepEqual(gotObj.kubeObject, wantObj) {
+				t.Fatalf("expected %v to be deep equal to %v", gotObj.kubeObject, wantObj)
 			}
 		})
 	}
@@ -389,5 +395,184 @@ func TestNotify(t *testing.T) {
 				tt.validate(t, srv)
 			}
 		})
+	}
+}
+
+func TestBuildConsumerMap(t *testing.T) {
+	alertsResp := &prometheusAlertsResponse{
+		Status: "success",
+		Data: struct {
+			Alerts []prometheusAlert `json:"alerts"`
+		}{
+			Alerts: []prometheusAlert{
+				{Labels: map[string]string{"alertname": "FiringMatch", storageConsumerNameLabel: "test-consumer"}, State: "firing", Value: "85.5"},
+				{Labels: map[string]string{"alertname": "WrongConsumer", storageConsumerNameLabel: "other-consumer"}, State: "firing", Value: "95"},
+				{Labels: map[string]string{"alertname": "Pending", storageConsumerNameLabel: "test-consumer"}, State: "pending", Value: "1"},
+				{Labels: map[string]string{"alertname": "NoLabel"}, State: "firing", Value: "90"},
+				{Labels: map[string]string{"alertname": "FiringMatch2", storageConsumerNameLabel: "test-consumer"}, State: "firing", Value: "3"},
+			},
+		},
+	}
+
+	got := buildConsumerMap(alertsResp)
+
+	// test-consumer should have 2 firing alerts
+	testAlerts := got["test-consumer"]
+	if len(testAlerts) != 2 {
+		t.Fatalf("expected 2 alerts for test-consumer, got %d", len(testAlerts))
+	}
+	if testAlerts[0].AlertName != "FiringMatch" {
+		t.Errorf("alert[0].AlertName = %q, want %q", testAlerts[0].AlertName, "FiringMatch")
+	}
+	if testAlerts[0].Value != 85.5 {
+		t.Errorf("alert[0].Value = %v, want 85.5", testAlerts[0].Value)
+	}
+	if testAlerts[1].AlertName != "FiringMatch2" {
+		t.Errorf("alert[1].AlertName = %q, want %q", testAlerts[1].AlertName, "FiringMatch2")
+	}
+
+	// other-consumer should have 1 alert
+	otherAlerts := got["other-consumer"]
+	if len(otherAlerts) != 1 {
+		t.Fatalf("expected 1 alert for other-consumer, got %d", len(otherAlerts))
+	}
+
+	// No alerts without consumer label
+	if _, ok := got[""]; ok {
+		t.Error("expected no alerts for empty consumer name")
+	}
+}
+
+func TestGetClientAlerts(t *testing.T) {
+	ctx := context.Background()
+	storageConsumer := &ocsv1a1.StorageConsumer{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-consumer",
+			Namespace: testNamespace,
+			UID:       "consumer-uid-123",
+		},
+	}
+	srv := newNotifyTestServer(t, storageConsumer)
+
+	// Inject a pre-populated alert cache (no HTTP server needed)
+	srv.alertStore = &alertStore{
+		pollInterval: time.Minute,
+		alertsByConsumer: map[string][]*pb.AlertInfo{
+			"test-consumer": {
+				{
+					AlertName: "CephOSDNearFull",
+					Labels: map[string]string{
+						"alertname":              "CephOSDNearFull",
+						storageConsumerNameLabel: "test-consumer",
+					},
+					Value: 85,
+				},
+			},
+		},
+		lastUpdateTime: time.Now(),
+	}
+
+	resp, err := srv.GetClientAlerts(ctx, &pb.GetClientAlertsRequest{
+		StorageConsumerUUID: string(storageConsumer.UID),
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(resp.Alerts) != 1 {
+		t.Fatalf("expected 1 alert, got %d", len(resp.Alerts))
+	}
+	if resp.Alerts[0].AlertName != "CephOSDNearFull" {
+		t.Errorf("expected alert name %q, got %q", "CephOSDNearFull", resp.Alerts[0].AlertName)
+	}
+	if resp.Alerts[0].Value != 85 {
+		t.Errorf("expected alert value 85, got %v", resp.Alerts[0].Value)
+	}
+}
+
+func TestAlertCachePolling(t *testing.T) {
+	var queryCount atomic.Int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		queryCount.Add(1)
+		response := prometheusAlertsResponse{
+			Status: "success",
+			Data: struct {
+				Alerts []prometheusAlert `json:"alerts"`
+			}{
+				Alerts: []prometheusAlert{
+					{
+						Labels: map[string]string{
+							"alertname":              "DiskPressure",
+							storageConsumerNameLabel: "test-consumer",
+						},
+						State: "firing",
+						Value: "85.5",
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(response)
+	}))
+	defer ts.Close()
+
+	cache := newAlertStore(ts.URL, 100*time.Millisecond, ts.Client())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	go cache.startPolling(ctx)
+
+	// Wait for at least 2 polls
+	time.Sleep(350 * time.Millisecond)
+
+	count := queryCount.Load()
+	if count < 2 {
+		t.Errorf("expected at least 2 Prometheus queries, got %d", count)
+	}
+
+	alerts, err := cache.getAlertsForConsumer("test-consumer")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(alerts) != 1 {
+		t.Fatalf("expected 1 alert, got %d", len(alerts))
+	}
+	if alerts[0].AlertName != "DiskPressure" {
+		t.Errorf("expected alert name %q, got %q", "DiskPressure", alerts[0].AlertName)
+	}
+	if alerts[0].Value != 85.5 {
+		t.Errorf("expected alert value 85.5, got %v", alerts[0].Value)
+	}
+}
+
+func TestAlertCacheConcurrentReads(t *testing.T) {
+	cache := &alertStore{
+		pollInterval: time.Minute,
+		alertsByConsumer: map[string][]*pb.AlertInfo{
+			"consumer-1": {{AlertName: "Alert1"}},
+			"consumer-2": {{AlertName: "Alert2"}},
+		},
+		lastUpdateTime: time.Now(),
+	}
+
+	const numReaders = 100
+	var wg sync.WaitGroup
+	errors := make([]error, numReaders)
+
+	for i := 0; i < numReaders; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			consumerName := fmt.Sprintf("consumer-%d", (idx%2)+1)
+			_, errors[idx] = cache.getAlertsForConsumer(consumerName)
+		}(i)
+	}
+
+	wg.Wait()
+
+	for i, err := range errors {
+		if err != nil {
+			t.Errorf("read %d failed: %v", i, err)
+		}
 	}
 }

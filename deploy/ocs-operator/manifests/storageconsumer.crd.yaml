@@ -188,6 +188,16 @@ spec:
                 description: Information of storage client received from consumer
                 nullable: true
                 properties:
+                  cephFsPvCount:
+                    description: CephFsPvCount is the number of CephFS PVs on the
+                      connected client
+                    format: int32
+                    type: integer
+                  cephFsVolumeSnapshotContentCount:
+                    description: CephFsVolumeSnapshotContentCount is the number of
+                      CephFS VolumeSnapshotContents on the connected client
+                    format: int32
+                    type: integer
                   clientId:
                     description: ID is the k8s UID of connected storageclient
                     type: string

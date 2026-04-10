@@ -24,6 +24,8 @@ const (
 	manageNoobaaSubKey                = "manageNoobaaSubscription"
 	disableVersionChecksKey           = "disableVersionChecks"
 	disableInstallPlanAutoApprovalKey = "disableInstallPlanAutoApproval"
+	// disableS3EndpointProxyKey disables deploying the S3 endpoint reverse proxy for the local/internal client
+	disableS3EndpointProxyKey = "disableS3EndpointProxy"
 	// cephNetworkAnnotationKey is the annotation key used to store network details used by ceph
 	cniNetworksAnnotationKey = "k8s.v1.cni.cncf.io/networks"
 )
@@ -126,6 +128,7 @@ func (s *storageClient) updateClientConfigMap(r *StorageClusterReconciler, names
 	clientConfig.Data[manageNoobaaSubKey] = strconv.FormatBool(false)
 	clientConfig.Data[disableVersionChecksKey] = strconv.FormatBool(true)
 	clientConfig.Data[disableInstallPlanAutoApprovalKey] = strconv.FormatBool(true)
+	clientConfig.Data[disableS3EndpointProxyKey] = strconv.FormatBool(true)
 
 	if !maps.Equal(clientConfig.Data, existingData) {
 		if err := r.Update(r.ctx, clientConfig); err != nil {

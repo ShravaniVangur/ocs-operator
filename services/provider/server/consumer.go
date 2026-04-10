@@ -98,6 +98,8 @@ func (c *ocsConsumerManager) UpdateConsumerStatus(ctx context.Context, id string
 	}
 	fillStorageClientInfo(&consumerObj.Status, status)
 	consumerObj.Status.Client.StorageQuotaUtilizationRatio = status.GetStorageQuotaUtilizationRatio()
+	consumerObj.Status.Client.CephFsPvCount = status.GetCephFsPVCount()
+	consumerObj.Status.Client.CephFsVolumeSnapshotContentCount = status.GetCephFsVolumeSnapshotContentCount()
 
 	if err := c.client.Status().Update(ctx, consumerObj); err != nil {
 		return fmt.Errorf("failed to patch Status for StorageConsumer %v: %v", consumerObj.Name, err)

@@ -323,19 +323,19 @@ func (obj *ocsCephCluster) ensureCreated(r *StorageClusterReconciler, sc *ocsv1.
 	// When phase is expanding, wait for CephCluster state to be updating
 	// this means expansion is in progress and overall system is progressing
 	// else expansion is not yet triggered
-	if sc.Status.Phase == util.PhaseClusterExpanding &&
+	if sc.Status.Phase == ocsv1.PhaseClusterExpanding &&
 		found.Status.State != rookCephv1.ClusterStateUpdating {
-		r.phase = util.PhaseClusterExpanding
+		r.phase = ocsv1.PhaseClusterExpanding
 	}
 
 	if sc.Spec.ExternalStorage.Enable {
 		switch found.Status.State {
 		case rookCephv1.ClusterStateConnecting:
-			sc.Status.Phase = util.PhaseConnecting
+			sc.Status.Phase = ocsv1.PhaseConnecting
 		case rookCephv1.ClusterStateConnected:
-			sc.Status.Phase = util.PhaseReady
+			sc.Status.Phase = ocsv1.PhaseReady
 		default:
-			sc.Status.Phase = util.PhaseNotReady
+			sc.Status.Phase = ocsv1.PhaseNotReady
 		}
 	}
 
@@ -345,16 +345,16 @@ func (obj *ocsCephCluster) ensureCreated(r *StorageClusterReconciler, sc *ocsv1.
 		if !sc.Spec.ExternalStorage.Enable {
 			// Check if Cluster is Expanding
 			if len(found.Spec.Storage.StorageClassDeviceSets) < len(cephCluster.Spec.Storage.StorageClassDeviceSets) {
-				r.phase = util.PhaseClusterExpanding
+				r.phase = ocsv1.PhaseClusterExpanding
 			} else if len(found.Spec.Storage.StorageClassDeviceSets) == len(cephCluster.Spec.Storage.StorageClassDeviceSets) {
 				for _, countInFoundSpec := range found.Spec.Storage.StorageClassDeviceSets {
 					for _, countInCephClusterSpec := range cephCluster.Spec.Storage.StorageClassDeviceSets {
 						if countInFoundSpec.Name == countInCephClusterSpec.Name && countInCephClusterSpec.Count > countInFoundSpec.Count {
-							r.phase = util.PhaseClusterExpanding
+							r.phase = ocsv1.PhaseClusterExpanding
 							break
 						}
 					}
-					if r.phase == util.PhaseClusterExpanding {
+					if r.phase == ocsv1.PhaseClusterExpanding {
 						break
 					}
 				}
@@ -1123,6 +1123,14 @@ func generateMonSpec(sc *ocsv1.StorageCluster, isTnfCLuster bool) rookCephv1.Mon
 	}
 	if arbiterEnabled(sc) {
 		spec.StretchCluster = generateStretchClusterSpec(sc)
+	}
+
+	// Values of the spec are taken care off by rook
+	if isTnfCLuster {
+		spec.FloatingMon = rookCephv1.FloatingMonSpec{
+			Name:          "mon-c",
+			ConfigMapName: "drbd-configure",
+		}
 	}
 	return spec
 }

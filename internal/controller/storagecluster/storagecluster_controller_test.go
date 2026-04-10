@@ -535,7 +535,7 @@ func TestIsActiveStorageCluster(t *testing.T) {
 					Namespace: "storage-test-ns",
 				},
 				Status: api.StorageClusterStatus{
-					Phase: statusutil.PhaseIgnored,
+					Phase: api.PhaseIgnored,
 				},
 			},
 			storageCluster2: &api.StorageCluster{
@@ -1080,7 +1080,7 @@ func createFakeStorageClusterReconciler(t *testing.T, obj ...runtime.Object) *St
 			Namespace: namespace,
 		},
 		Status: &rookCephv1.CephFilesystemStatus{
-			Phase: rookCephv1.ConditionType(statusutil.PhaseReady),
+			Phase: rookCephv1.ConditionType(api.PhaseReady),
 		},
 	}
 	cbp := &rookCephv1.CephBlockPool{
@@ -1089,7 +1089,7 @@ func createFakeStorageClusterReconciler(t *testing.T, obj ...runtime.Object) *St
 			Namespace: namespace,
 		},
 		Status: &rookCephv1.CephBlockPoolStatus{
-			Phase: rookCephv1.ConditionType(statusutil.PhaseReady),
+			Phase: rookCephv1.ConditionType(api.PhaseReady),
 		},
 	}
 	verOcs, err := semver.Make(ocsversion.Version)

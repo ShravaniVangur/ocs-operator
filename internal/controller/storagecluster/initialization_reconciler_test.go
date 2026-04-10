@@ -10,7 +10,6 @@ import (
 	ocsv1a1 "github.com/red-hat-storage/ocs-operator/api/v4/v1alpha1"
 	"github.com/red-hat-storage/ocs-operator/v4/pkg/defaults"
 	"github.com/red-hat-storage/ocs-operator/v4/pkg/platform"
-	"github.com/red-hat-storage/ocs-operator/v4/pkg/util"
 	ocsversion "github.com/red-hat-storage/ocs-operator/v4/version"
 
 	"github.com/blang/semver/v4"
@@ -339,7 +338,7 @@ func createFakeInitializationStorageClusterReconciler(t *testing.T, obj ...runti
 			Name: "ocsinit-cephfilesystem",
 		},
 		Status: &cephv1.CephFilesystemStatus{
-			Phase: cephv1.ConditionType(util.PhaseReady),
+			Phase: cephv1.ConditionType(api.PhaseReady),
 		},
 	}
 
@@ -354,7 +353,7 @@ func createFakeInitializationStorageClusterReconciler(t *testing.T, obj ...runti
 		ObjectMeta: metav1.ObjectMeta{Name: "ocsinit-cephnfs"},
 		Status: &cephv1.NFSStatus{
 			Status: cephv1.Status{
-				Phase: util.PhaseReady,
+				Phase: api.PhaseReady,
 			},
 		},
 	}
@@ -362,7 +361,7 @@ func createFakeInitializationStorageClusterReconciler(t *testing.T, obj ...runti
 	cnfsbp := &cephv1.CephBlockPool{
 		ObjectMeta: metav1.ObjectMeta{Name: "ocsinit-cephnfs-builtin-pool"},
 		Status: &cephv1.CephBlockPoolStatus{
-			Phase: cephv1.ConditionType(util.PhaseReady),
+			Phase: cephv1.ConditionType(api.PhaseReady),
 		},
 	}
 
@@ -377,7 +376,7 @@ func createFakeInitializationStorageClusterReconciler(t *testing.T, obj ...runti
 			Name: "ocsinit-cephblockpool",
 		},
 		Status: &cephv1.CephBlockPoolStatus{
-			Phase: cephv1.ConditionType(util.PhaseReady),
+			Phase: cephv1.ConditionType(api.PhaseReady),
 		},
 	}
 

@@ -115,7 +115,7 @@ func (r *OCSInitializationReconciler) Reconcile(ctx context.Context, request rec
 			return reconcile.Result{}, err
 		}
 
-		instance.Status.Phase = util.PhaseIgnored
+		instance.Status.Phase = ocsv1.PhaseIgnored
 		err = r.Status().Update(ctx, instance)
 		if err != nil {
 			r.Log.Error(err, "Failed to update ignored OCSInitialization resource.", "OCSInitialization", klog.KRef(instance.Namespace, instance.Name))
@@ -151,7 +151,7 @@ func (r *OCSInitializationReconciler) Reconcile(ctx context.Context, request rec
 		message := "Initializing OCSInitialization resource"
 		util.SetProgressingCondition(&instance.Status.Conditions, reason, message)
 
-		instance.Status.Phase = util.PhaseProgressing
+		instance.Status.Phase = ocsv1.PhaseProgressing
 		err = r.Status().Update(ctx, instance)
 		if err != nil {
 			r.Log.Error(err, "Failed to add conditions to status of OCSInitialization resource.", "OCSInitialization", klog.KRef(instance.Namespace, instance.Name))
@@ -165,7 +165,7 @@ func (r *OCSInitializationReconciler) Reconcile(ctx context.Context, request rec
 		message := fmt.Sprintf("Error while reconciling: %v", err)
 		util.SetErrorCondition(&instance.Status.Conditions, reason, message)
 
-		instance.Status.Phase = util.PhaseError
+		instance.Status.Phase = ocsv1.PhaseError
 		// don't want to overwrite the actual reconcile failure
 		uErr := r.Status().Update(ctx, instance)
 		if uErr != nil {
@@ -246,7 +246,7 @@ func (r *OCSInitializationReconciler) Reconcile(ctx context.Context, request rec
 	message := ocsv1.ReconcileCompletedMessage
 	util.SetCompleteCondition(&instance.Status.Conditions, reason, message)
 
-	instance.Status.Phase = util.PhaseReady
+	instance.Status.Phase = ocsv1.PhaseReady
 	err = r.Status().Update(ctx, instance)
 
 	return reconcile.Result{}, err

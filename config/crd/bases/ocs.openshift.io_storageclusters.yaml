@@ -197,7 +197,7 @@ spec:
                           resources:
                             description: |-
                               resources represents the minimum resources the volume should have.
-                              If RecoverVolumeExpansionFailure feature is enabled users are allowed to specify resource requirements
+                              Users are allowed to specify resource requirements
                               that are lower than previous value but must still be higher than capacity recorded in the
                               status field of the claim.
                               More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#resources
@@ -356,9 +356,7 @@ spec:
                               ignore the update for the purpose it was designed. For
                               example - a controller that\nonly is responsible for
                               resizing capacity of the volume, should ignore PVC updates
-                              that change other valid\nresources associated with PVC.\n\nThis
-                              is an alpha field and requires enabling RecoverVolumeExpansionFailure
-                              feature."
+                              that change other valid\nresources associated with PVC."
                             type: object
                             x-kubernetes-map-type: granular
                           allocatedResources:
@@ -390,9 +388,7 @@ spec:
                               ignore the update for the purpose it was designed. For
                               example - a controller that\nonly is responsible for
                               resizing capacity of the volume, should ignore PVC updates
-                              that change other valid\nresources associated with PVC.\n\nThis
-                              is an alpha field and requires enabling RecoverVolumeExpansionFailure
-                              feature."
+                              that change other valid\nresources associated with PVC."
                             type: object
                           capacity:
                             additionalProperties:
@@ -2410,7 +2406,7 @@ spec:
                               resources:
                                 description: |-
                                   resources represents the minimum resources the volume should have.
-                                  If RecoverVolumeExpansionFailure feature is enabled users are allowed to specify resource requirements
+                                  Users are allowed to specify resource requirements
                                   that are lower than previous value but must still be higher than capacity recorded in the
                                   status field of the claim.
                                   More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#resources
@@ -2574,8 +2570,7 @@ spec:
                                   controller that\nonly is responsible for resizing
                                   capacity of the volume, should ignore PVC updates
                                   that change other valid\nresources associated with
-                                  PVC.\n\nThis is an alpha field and requires enabling
-                                  RecoverVolumeExpansionFailure feature."
+                                  PVC."
                                 type: object
                                 x-kubernetes-map-type: granular
                               allocatedResources:
@@ -2610,8 +2605,7 @@ spec:
                                   For example - a controller that\nonly is responsible
                                   for resizing capacity of the volume, should ignore
                                   PVC updates that change other valid\nresources associated
-                                  with PVC.\n\nThis is an alpha field and requires
-                                  enabling RecoverVolumeExpansionFailure feature."
+                                  with PVC."
                                 type: object
                               capacity:
                                 additionalProperties:
@@ -2950,6 +2944,9 @@ spec:
                           existing insecure ceph RGW http route.
                         type: boolean
                       disableRoute:
+                        type: boolean
+                      enableSTS:
+                        description: Enables STS authentication for RGW
                         type: boolean
                       gatewayInstances:
                         type: integer
@@ -3362,7 +3359,7 @@ spec:
                       resources:
                         description: |-
                           resources represents the minimum resources the volume should have.
-                          If RecoverVolumeExpansionFailure feature is enabled users are allowed to specify resource requirements
+                          Users are allowed to specify resource requirements
                           that are lower than previous value but must still be higher than capacity recorded in the
                           status field of the claim.
                           More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#resources
@@ -3519,8 +3516,7 @@ spec:
                           for the purpose it was designed. For example - a controller
                           that\nonly is responsible for resizing capacity of the volume,
                           should ignore PVC updates that change other valid\nresources
-                          associated with PVC.\n\nThis is an alpha field and requires
-                          enabling RecoverVolumeExpansionFailure feature."
+                          associated with PVC."
                         type: object
                         x-kubernetes-map-type: granular
                       allocatedResources:
@@ -3551,8 +3547,7 @@ spec:
                           for the purpose it was designed. For example - a controller
                           that\nonly is responsible for resizing capacity of the volume,
                           should ignore PVC updates that change other valid\nresources
-                          associated with PVC.\n\nThis is an alpha field and requires
-                          enabling RecoverVolumeExpansionFailure feature."
+                          associated with PVC."
                         type: object
                       capacity:
                         additionalProperties:
@@ -3656,6 +3651,32 @@ spec:
                     description: DisableBlackboxExporter disables deployment of Blackbox
                       Exporter for network health checks
                     type: boolean
+                  excludedAlerts:
+                    description: |-
+                      ExcludedAlerts lists alerts to exclude from ODF health score calculation.
+                      Alerts still fire in Prometheus but are excluded from health score.
+                    items:
+                      description: ExcludedAlert represents an alert that has been
+                        excluded
+                      properties:
+                        alertName:
+                          description: AlertName is the name of the alert to exclude
+                          type: string
+                        excludedAt:
+                          description: ExcludedAt is the timestamp when the alert
+                            was excluded
+                          format: date-time
+                          type: string
+                        severity:
+                          description: |-
+                            Severity is the severity of the alert to exclude. Valid
+                            values are "critical", "warning", and "info".
+                          type: string
+                      required:
+                      - alertName
+                      - excludedAt
+                      type: object
+                    type: array
                   labels:
                     additionalProperties:
                       type: string
@@ -5080,9 +5101,10 @@ spec:
                           operator:
                             description: |-
                               Operator represents a key's relationship to the value.
-                              Valid operators are Exists and Equal. Defaults to Equal.
+                              Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
                               Exists is equivalent to wildcard for value, so that a pod can
                               tolerate all taints of a particular category.
+                              Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
                             type: string
                           tolerationSeconds:
                             description: |-
@@ -5530,7 +5552,7 @@ spec:
                             resources:
                               description: |-
                                 resources represents the minimum resources the volume should have.
-                                If RecoverVolumeExpansionFailure feature is enabled users are allowed to specify resource requirements
+                                Users are allowed to specify resource requirements
                                 that are lower than previous value but must still be higher than capacity recorded in the
                                 status field of the claim.
                                 More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#resources
@@ -5692,8 +5714,7 @@ spec:
                                 For example - a controller that\nonly is responsible
                                 for resizing capacity of the volume, should ignore
                                 PVC updates that change other valid\nresources associated
-                                with PVC.\n\nThis is an alpha field and requires enabling
-                                RecoverVolumeExpansionFailure feature."
+                                with PVC."
                               type: object
                               x-kubernetes-map-type: granular
                             allocatedResources:
@@ -5727,8 +5748,7 @@ spec:
                                 For example - a controller that\nonly is responsible
                                 for resizing capacity of the volume, should ignore
                                 PVC updates that change other valid\nresources associated
-                                with PVC.\n\nThis is an alpha field and requires enabling
-                                RecoverVolumeExpansionFailure feature."
+                                with PVC."
                               type: object
                             capacity:
                               additionalProperties:
@@ -5993,7 +6013,7 @@ spec:
                             resources:
                               description: |-
                                 resources represents the minimum resources the volume should have.
-                                If RecoverVolumeExpansionFailure feature is enabled users are allowed to specify resource requirements
+                                Users are allowed to specify resource requirements
                                 that are lower than previous value but must still be higher than capacity recorded in the
                                 status field of the claim.
                                 More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#resources
@@ -6155,8 +6175,7 @@ spec:
                                 For example - a controller that\nonly is responsible
                                 for resizing capacity of the volume, should ignore
                                 PVC updates that change other valid\nresources associated
-                                with PVC.\n\nThis is an alpha field and requires enabling
-                                RecoverVolumeExpansionFailure feature."
+                                with PVC."
                               type: object
                               x-kubernetes-map-type: granular
                             allocatedResources:
@@ -6190,8 +6209,7 @@ spec:
                                 For example - a controller that\nonly is responsible
                                 for resizing capacity of the volume, should ignore
                                 PVC updates that change other valid\nresources associated
-                                with PVC.\n\nThis is an alpha field and requires enabling
-                                RecoverVolumeExpansionFailure feature."
+                                with PVC."
                               type: object
                             capacity:
                               additionalProperties:
@@ -7229,9 +7247,10 @@ spec:
                               operator:
                                 description: |-
                                   Operator represents a key's relationship to the value.
-                                  Valid operators are Exists and Equal. Defaults to Equal.
+                                  Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
                                   Exists is equivalent to wildcard for value, so that a pod can
                                   tolerate all taints of a particular category.
+                                  Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
                                 type: string
                               tolerationSeconds:
                                 description: |-
@@ -8369,9 +8388,10 @@ spec:
                               operator:
                                 description: |-
                                   Operator represents a key's relationship to the value.
-                                  Valid operators are Exists and Equal. Defaults to Equal.
+                                  Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
                                   Exists is equivalent to wildcard for value, so that a pod can
                                   tolerate all taints of a particular category.
+                                  Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
                                 type: string
                               tolerationSeconds:
                                 description: |-
@@ -8777,7 +8797,7 @@ spec:
                             resources:
                               description: |-
                                 resources represents the minimum resources the volume should have.
-                                If RecoverVolumeExpansionFailure feature is enabled users are allowed to specify resource requirements
+                                Users are allowed to specify resource requirements
                                 that are lower than previous value but must still be higher than capacity recorded in the
                                 status field of the claim.
                                 More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#resources
@@ -8939,8 +8959,7 @@ spec:
                                 For example - a controller that\nonly is responsible
                                 for resizing capacity of the volume, should ignore
                                 PVC updates that change other valid\nresources associated
-                                with PVC.\n\nThis is an alpha field and requires enabling
-                                RecoverVolumeExpansionFailure feature."
+                                with PVC."
                               type: object
                               x-kubernetes-map-type: granular
                             allocatedResources:
@@ -8974,8 +8993,7 @@ spec:
                                 For example - a controller that\nonly is responsible
                                 for resizing capacity of the volume, should ignore
                                 PVC updates that change other valid\nresources associated
-                                with PVC.\n\nThis is an alpha field and requires enabling
-                                RecoverVolumeExpansionFailure feature."
+                                with PVC."
                               type: object
                             capacity:
                               additionalProperties:

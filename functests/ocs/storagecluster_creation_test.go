@@ -8,7 +8,6 @@ import (
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 	ocsv1 "github.com/red-hat-storage/ocs-operator/api/v4/v1"
-	"github.com/red-hat-storage/ocs-operator/v4/pkg/util"
 	tests "github.com/red-hat-storage/ocs-operator/v4/functests"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -79,7 +78,7 @@ func StorageClusterCreationTest() {
 					if err != nil {
 						return err
 					}
-					if sc.Status.Phase == util.PhaseIgnored {
+					if sc.Status.Phase == ocsv1.PhaseIgnored {
 						return nil
 					}
 					return fmt.Errorf("Waiting on StorageCluster %s/%s to reach Ignored state when it is currently %s", sc.Namespace, sc.Name, sc.Status.Phase)

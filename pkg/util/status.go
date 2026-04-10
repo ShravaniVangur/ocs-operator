@@ -10,29 +10,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-// These constants represent the overall Phase as used by .Status.Phase
-var (
-	// PhaseIgnored is used when a resource is ignored
-	PhaseIgnored = "Ignored"
-	// PhaseProgressing is used when SetProgressingCondition is called
-	PhaseProgressing = "Progressing"
-	// PhaseError is used when SetErrorCondition is called
-	PhaseError = "Error"
-	// PhaseReady is used when SetCompleteCondition is called
-	PhaseReady = "Ready"
-	// PhaseNotReady is used when waiting for system to be ready
-	// after reconcile is successful
-	PhaseNotReady = "Not Ready"
-	// PhaseClusterExpanding is used when cluster is expanding capacity
-	PhaseClusterExpanding = "Expanding Capacity"
-	// PhaseDeleting is used when cluster is deleting
-	PhaseDeleting = "Deleting"
-	// PhaseConnecting is used when cluster is connecting to external cluster
-	PhaseConnecting = "Connecting"
-	// PhaseOnboarding is used when consumer is Onboarding
-	PhaseOnboarding = "Onboarding"
-)
-
 const (
 	// ExternalClusterConnectingReason indicates the storage cluster is trying to connect to an external one.
 	ExternalClusterConnectingReason = "ExternalClusterStateConnecting"

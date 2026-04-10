@@ -133,7 +133,7 @@ func (c *Clusters) AreOtherStorageClustersReady(instance *ocsv1.StorageCluster) 
 	for _, sc := range append(c.internalStorageClusters, c.externalStorageClusters...) {
 		// ignore the current recociling storage cluster as its status will set in the current reconcile
 		if sc.Name != instance.Name && sc.Namespace != instance.Namespace {
-			if sc.Status.Phase != PhaseReady {
+			if sc.Status.Phase != ocsv1.PhaseReady {
 				return false
 			}
 		}

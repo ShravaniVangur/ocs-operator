@@ -285,7 +285,7 @@ func GetStorageClusterInNamespace(ctx context.Context, cl client.Client, namespa
 	if len(storageClusterList.Items) == 0 {
 		return nil, fmt.Errorf("no storageCluster found in namespace %s", namespace)
 	}
-	if storageClusterList.Items[0].Status.Phase == PhaseIgnored {
+	if storageClusterList.Items[0].Status.Phase == ocsv1.PhaseIgnored {
 		return nil, fmt.Errorf("storageCluster with Phase 'Ignored' found. Please delete the storageCluster to proceed")
 	}
 

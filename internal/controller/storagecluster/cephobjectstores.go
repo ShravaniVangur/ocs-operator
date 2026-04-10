@@ -2,6 +2,7 @@ package storagecluster
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 
 	ocsv1 "github.com/red-hat-storage/ocs-operator/api/v4/v1"
@@ -19,7 +20,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-const enableRGWAutoscaleAnnotation = "ocs.openshift.io/enable-rgw-autoscale"
+const (
+	enableRGWAutoscaleAnnotation = "ocs.openshift.io/enable-rgw-autoscale"
+	stsKeyLen                    = 16 // 16 alphanumeric characters for STS key
+)
 
 type ocsCephObjectStores struct{}
 
@@ -268,6 +272,15 @@ func (r *StorageClusterReconciler) newCephObjectStoreInstances(initData *ocsv1.S
 		if hasNonPortableOSD(initData) {
 			obj.Spec.Gateway.ReadAffinity = &cephv1.RgwReadAffinity{Type: "localize"}
 		}
+
+		// Enable STS for RGW via rgwConfig and rgwSecretConfig
+		if initData.Spec.ManagedResources.CephObjectStores.EnableSTS {
+			if err := r.setSTSOptions(obj, initData); err != nil {
+				r.Log.Error(err, "Failed to set STS options for CephObjectStore.", "CephObjectStore", klog.KRef(obj.Namespace, obj.Name))
+				return nil, err
+			}
+		}
+
 	}
 	return ret, nil
 }
@@ -312,4 +325,94 @@ func getRGWSecurePort(sc *ocsv1.StorageCluster) int32 {
 		return 50443
 	}
 	return 443
+}
+
+// generateRandomSTSKey generates a cryptographically secure random alphanumeric key for STS
+// RGW requires the STS key to be alphanumeric (letters and numbers only)
+// Returns a 16-character alphanumeric string suitable for use as rgw_sts_key
+func generateRandomSTSKey() (string, error) {
+	// Character set: alphanumeric only (a-z, A-Z, 0-9)
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	const charsetLen = len(charset)
+
+	// Generate random alphanumeric string
+	key := make([]byte, stsKeyLen)
+	randomBytes := make([]byte, stsKeyLen)
+
+	_, err := rand.Read(randomBytes)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate random bytes: %w", err)
+	}
+
+	// Map random bytes to alphanumeric characters
+	for i, b := range randomBytes {
+		key[i] = charset[int(b)%charsetLen]
+	}
+
+	return string(key), nil
+}
+
+// STS Options via rgwConfig and rgwSecretConfig
+// Create k8s secret containing sts key
+func (r *StorageClusterReconciler) setSTSOptions(obj *cephv1.CephObjectStore, sc *ocsv1.StorageCluster) error {
+	// Set rgw_s3_auth_use_sts to true in rgwConfig
+	if obj.Spec.Gateway.RgwConfig == nil {
+		obj.Spec.Gateway.RgwConfig = make(map[string]string)
+	}
+	obj.Spec.Gateway.RgwConfig["rgw_s3_auth_use_sts"] = "true"
+
+	// Create secret for STS key
+	secretName := fmt.Sprintf("sts-key-%s", obj.Name)
+	secretKeyName := "rgw_sts_key"
+
+	// Generate a cryptographically secure random STS key (16 bytes = 128 bits)
+	stsKey, err := generateRandomSTSKey()
+	if err != nil {
+		return fmt.Errorf("failed to generate STS key: %w", err)
+	}
+
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: obj.Namespace,
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: map[string][]byte{
+			secretKeyName: []byte(stsKey),
+		},
+	}
+
+	// Set owner reference to the StorageCluster
+	if err := controllerutil.SetControllerReference(sc, secret, r.Scheme); err != nil {
+		return fmt.Errorf("failed to set controller reference for STS secret: %w", err)
+	}
+
+	// Create or update the secret
+	existingSecret := &corev1.Secret{}
+	err = r.Get(context.TODO(), types.NamespacedName{Name: secretName, Namespace: obj.Namespace}, existingSecret)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			r.Log.Info("Creating STS secret for CephObjectStore.", "Secret", klog.KRef(secret.Namespace, secret.Name), "CephObjectStore", klog.KRef(obj.Namespace, obj.Name))
+			if err := r.Create(context.TODO(), secret); err != nil {
+				return fmt.Errorf("failed to create STS secret: %w", err)
+			}
+		} else {
+			return fmt.Errorf("failed to get STS secret: %w", err)
+		}
+	} else {
+		r.Log.Info("STS secret already exists for CephObjectStore.", "Secret", klog.KRef(secret.Namespace, secret.Name), "CephObjectStore", klog.KRef(obj.Namespace, obj.Name))
+	}
+
+	// Set rgw_sts_key in RgwConfigFromSecret with SecretKeySelector
+	if obj.Spec.Gateway.RgwConfigFromSecret == nil {
+		obj.Spec.Gateway.RgwConfigFromSecret = make(map[string]corev1.SecretKeySelector)
+	}
+	obj.Spec.Gateway.RgwConfigFromSecret["rgw_sts_key"] = corev1.SecretKeySelector{
+		LocalObjectReference: corev1.LocalObjectReference{
+			Name: secretName,
+		},
+		Key: secretKeyName,
+	}
+
+	return nil
 }

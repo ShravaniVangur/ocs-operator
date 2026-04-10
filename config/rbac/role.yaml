@@ -4,6 +4,12 @@ kind: ClusterRole
 metadata:
   name: manager-role
 rules:
+- nonResourceURLs:
+  - /healthz
+  - /metrics
+  - /readyz
+  verbs:
+  - get
 - apiGroups:
   - ""
   resources:
@@ -153,6 +159,13 @@ rules:
   - get
   - list
   - update
+- apiGroups:
+  - csiaddons.openshift.io
+  resources:
+  - csiaddonsnodes
+  verbs:
+  - get
+  - list
 - apiGroups:
   - csiaddons.openshift.io
   resources:
@@ -339,6 +352,7 @@ rules:
   verbs:
   - create
   - delete
+  - get
   - list
   - update
   - watch

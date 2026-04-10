@@ -16,22 +16,8 @@ import (
 
 type ocsNetworkFenceClass struct{}
 
-func (o *ocsNetworkFenceClass) deleteNetworkFenceClass(r *StorageClusterReconciler, networkFenceClass *csiaddonsv1alpha1.NetworkFenceClass) (reconcile.Result, error) {
-
-	if !networkFenceClass.DeletionTimestamp.IsZero() {
-		return reconcile.Result{}, fmt.Errorf("uninstall: Waiting for NetworkFenceClass %v to be deleted", client.ObjectKeyFromObject(networkFenceClass))
-	}
-
-	r.Log.Info("Uninstall: Deleting NetworkFenceClass.", "NetworkFenceClass", client.ObjectKeyFromObject(networkFenceClass))
-	if err := r.Delete(r.ctx, networkFenceClass); err != nil {
-		return reconcile.Result{}, fmt.Errorf("uninstall: Failed to delete NetworkFenceClass %v: %v", client.ObjectKeyFromObject(networkFenceClass), err)
-	}
-	return reconcile.Result{}, nil
-}
-
 func (o *ocsNetworkFenceClass) reconcileNetworkFenceClass(
 	r *StorageClusterReconciler,
-	storageCluster *ocsv1.StorageCluster,
 	networkFenceClass *csiaddonsv1alpha1.NetworkFenceClass,
 	reconcileStrategy ReconcileStrategy,
 ) (reconcile.Result, error) {
@@ -42,24 +28,11 @@ func (o *ocsNetworkFenceClass) reconcileNetworkFenceClass(
 	existing := &csiaddonsv1alpha1.NetworkFenceClass{}
 	existing.Name = networkFenceClass.Name
 
-	if err := r.Get(r.ctx, client.ObjectKeyFromObject(existing), existing); client.IgnoreNotFound(err) != nil {
-		return reconcile.Result{}, err
-	}
-
-	// storageCluster is marked for deletion - delete it
-	if !storageCluster.GetDeletionTimestamp().IsZero() {
-		// if found, delete the networkFenceClass
-		if existing.UID != "" {
-			return o.deleteNetworkFenceClass(r, existing)
-		}
-		return reconcile.Result{}, nil
-	}
-
-	if existing.UID != "" && reconcileStrategy == ReconcileStrategyInit {
-		return reconcile.Result{}, nil
-	}
-
 	if _, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, existing, func() error {
+
+		if existing.UID != "" && reconcileStrategy == ReconcileStrategyInit {
+			return nil
+		}
 
 		if len(existing.Labels) == 0 {
 			existing.Labels = map[string]string{}
@@ -95,7 +68,6 @@ func (o *ocsNetworkFenceClass) reconcileRbdNetworkFenceClass(r *StorageClusterRe
 
 	return o.reconcileNetworkFenceClass(
 		r,
-		storageCluster,
 		rbdNetworkFenceClass,
 		ReconcileStrategy(storageCluster.Spec.ManagedResources.CephBlockPools.ReconcileStrategy),
 	)
@@ -115,13 +87,13 @@ func (o *ocsNetworkFenceClass) reconcileCephFsNetworkFenceClass(r *StorageCluste
 
 	return o.reconcileNetworkFenceClass(
 		r,
-		storageCluster,
 		cephFsNetworkFenceClass,
 		ReconcileStrategy(storageCluster.Spec.ManagedResources.CephFilesystems.ReconcileStrategy),
 	)
 }
 
-func (o *ocsNetworkFenceClass) reconcileNetworkFenceClassPhases(r *StorageClusterReconciler, storageCluster *ocsv1.StorageCluster) (reconcile.Result, error) {
+// ensureCreated functions ensures that NetworkFenceClass classes are created
+func (o *ocsNetworkFenceClass) ensureCreated(r *StorageClusterReconciler, storageCluster *ocsv1.StorageCluster) (reconcile.Result, error) {
 	var fsid string
 	if cephCluster, err := util.GetCephClusterInNamespace(r.ctx, r.Client, storageCluster.Namespace); err != nil {
 		return reconcile.Result{}, err
@@ -142,12 +114,24 @@ func (o *ocsNetworkFenceClass) reconcileNetworkFenceClassPhases(r *StorageCluste
 	return reconcile.Result{}, nil
 }
 
-// ensureCreated functions ensures that NetworkFenceClass classes are created
-func (o *ocsNetworkFenceClass) ensureCreated(r *StorageClusterReconciler, storageCluster *ocsv1.StorageCluster) (reconcile.Result, error) {
-	return o.reconcileNetworkFenceClassPhases(r, storageCluster)
-}
-
 // ensureDeleted deletes the NetworkFenceClass that the ocs-operator created
 func (o *ocsNetworkFenceClass) ensureDeleted(r *StorageClusterReconciler, storageCluster *ocsv1.StorageCluster) (reconcile.Result, error) {
-	return o.reconcileNetworkFenceClassPhases(r, storageCluster)
+	names := []string{
+		util.GenerateNameForNetworkFenceClass(storageCluster.Name, util.RbdNetworkFenceClass),
+		util.GenerateNameForNetworkFenceClass(storageCluster.Name, util.CephfsNetworkFenceClass),
+	}
+	for _, name := range names {
+		nfc := &csiaddonsv1alpha1.NetworkFenceClass{}
+		nfc.Name = name
+		if err := r.Get(r.ctx, client.ObjectKeyFromObject(nfc), nfc); client.IgnoreNotFound(err) != nil {
+			r.Log.Error(err, "failed to get NetworkFenceClass", "NetworkFenceClass", client.ObjectKeyFromObject(nfc))
+			return reconcile.Result{}, err
+		} else if nfc.UID != "" {
+			if err := r.Delete(r.ctx, nfc); client.IgnoreNotFound(err) != nil {
+				r.Log.Error(err, "failed to delete NetworkFenceClass.", "NetworkFenceClass", client.ObjectKeyFromObject(nfc))
+				return reconcile.Result{}, err
+			}
+		}
+	}
+	return reconcile.Result{}, nil
 }

@@ -260,25 +260,18 @@ func (r *StorageClusterReconciler) createExternalStorageClusterResources(instanc
 	availableSCCs := []StorageClassConfiguration{}
 	rbdSCParameters := map[string]string{}
 
-	var fsid string
-	if cephCluster, err := util.GetCephClusterInNamespace(r.ctx, r.Client, instance.Namespace); err != nil {
-		return err
-	} else if cephCluster.Status.CephStatus == nil || cephCluster.Status.CephStatus.FSID == "" {
-		return fmt.Errorf("waiting for Ceph FSID")
-	} else {
-		fsid = cephCluster.Status.CephStatus.FSID
-	}
-
-	rbdStorageID := util.CalculateCephRbdStorageID(fsid, getExternalModeRadosNamespaceName(instance))
-	cephFsStorageID := util.CalculateCephFsStorageID(fsid, "csi")
-
 	data, ok := externalOCSResources[instance.UID]
 	if !ok {
 		return fmt.Errorf("unable to retrieve external resource from externalOCSResources")
 	}
 
 	var extCephObjectStores []*cephv1.CephObjectStore
+	// Create ConfigMaps, Secrets, and Ceph CRs before requiring FSID in CephCluster status for
+	// StorageClass ramendr storageid labels; otherwise mon resources are never created (DFBUGS-6229).
 	for _, d := range data {
+		if d.Kind == "StorageClass" {
+			continue
+		}
 		objectMeta := metav1.ObjectMeta{
 			Name:            d.Name,
 			Namespace:       instance.Namespace,
@@ -345,132 +338,148 @@ func (r *StorageClusterReconciler) createExternalStorageClusterResources(instanc
 				r.Log.Error(err, "Could not create CephBlockPoolRadosNamespace.", "CephBlockPoolRadosNamespace", klog.KRef(radosNamespace.Namespace, radosNamespace.Name))
 				return err
 			}
+		}
+	}
 
-		case "StorageClass":
-			scManagedResources := &instance.Spec.ManagedResources
-			var scc StorageClassConfiguration
-			if d.Name == cephFsStorageClassName {
-				scc = StorageClassConfiguration{
-					storageClass: util.NewDefaultCephFsStorageClass(
-						instance.Namespace,
-						util.GenerateNameForCephFilesystem(instance.Name),
-						"rook-csi-cephfs-provisioner",
-						"rook-csi-cephfs-node",
-						instance.Namespace,
-						cephFsStorageID,
-						"",
-					),
-					reconcileStrategy: ReconcileStrategy(scManagedResources.CephFilesystems.ReconcileStrategy),
-					isClusterExternal: true,
-				}
-				scc.storageClass.Name = util.GenerateNameForCephFilesystemStorageClass(instance)
-			} else if d.Name == cephRbdStorageClassName {
-				scc = StorageClassConfiguration{
-					storageClass: util.NewDefaultRbdStorageClass(
-						instance.Namespace,
-						util.If(
-							util.IsDefaultPoolErasureCodingEnabled(instance.Spec.ManagedResources.CephBlockPools),
-							instance.Spec.ManagedResources.CephBlockPools.ErasureCodedMetadataPool,
-							util.GenerateNameForCephBlockPool(instance.Name),
-						),
-						"rook-csi-rbd-provisioner",
-						"rook-csi-rbd-node",
-						instance.Namespace,
-						rbdStorageID,
-						"",
-						instance.Spec.ManagedResources.CephBlockPools.DefaultStorageClass,
-						util.If(
-							util.IsDefaultPoolErasureCodingEnabled(instance.Spec.ManagedResources.CephBlockPools),
-							util.GenerateNameForCephBlockPool(instance.Name),
-							"",
-						),
-					),
-					reconcileStrategy: ReconcileStrategy(scManagedResources.CephBlockPools.ReconcileStrategy),
-					isClusterExternal: true,
-				}
-				scc.storageClass.Name = util.GenerateNameForCephBlockPoolStorageClass(instance)
-			} else if strings.HasPrefix(d.Name, cephRbdRadosNamespaceStorageClassNamePrefix) { // ceph-rbd-rados-namespace-<radosNamespaceName>
-				scc = StorageClassConfiguration{
-					storageClass: util.NewDefaultRbdStorageClass(
-						instance.Namespace,
-						util.GenerateNameForCephBlockPool(instance.Name),
-						"rook-csi-rbd-provisioner",
-						"rook-csi-rbd-node",
-						instance.Namespace,
-						rbdStorageID,
-						"",
-						scManagedResources.CephBlockPools.DefaultStorageClass,
-						"",
-					),
-					reconcileStrategy: ReconcileStrategy(scManagedResources.CephBlockPools.ReconcileStrategy),
-					isClusterExternal: true,
-				}
-				// update the storageclass name to rados storagesclass name
-				scc.storageClass.Name = fmt.Sprintf("%s-%s", instance.Name, d.Name)
-			} else if d.Name == cephRbdTopologyStorageClassName {
-				topologyConstrainedPools, err := getTopologyConstrainedPoolsExternalMode(d.Data)
-				if err != nil {
-					r.Log.Error(
-						err,
-						"Failed to get topologyConstrainedPools from external mode secret.",
-						"StorageClass",
-						klog.KRef(instance.Namespace, d.Name),
-					)
-					return err
-				}
-				scc = StorageClassConfiguration{
-					storageClass: util.NewDefaultNonResilientRbdStorageClass(
-						instance.Namespace,
-						topologyConstrainedPools,
-						"rook-csi-rbd-provisioner",
-						"rook-csi-rbd-node",
-						instance.Namespace,
-						rbdStorageID,
-						"",
-					),
-					isClusterExternal: true,
-				}
-				scc.storageClass.Name = util.GenerateNameForNonResilientCephBlockPoolStorageClass(instance)
-			} else if d.Name == cephRgwStorageClassName {
-				rgwEndpoint = d.Data[externalCephRgwEndpointKey]
-				// rgw-endpoint is no longer needed in the 'd.Data' dictionary,
-				// and can be deleted
-				// created an issue in rook to add `CephObjectStore` type directly in the JSON output
-				// https://github.com/rook/rook/issues/6165
-				delete(d.Data, externalCephRgwEndpointKey)
+	var fsid string
+	if cephCluster, err := util.GetCephClusterInNamespace(r.ctx, r.Client, instance.Namespace); err != nil {
+		return err
+	} else if cephCluster.Status.CephStatus == nil || cephCluster.Status.CephStatus.FSID == "" {
+		return fmt.Errorf("waiting for Ceph FSID")
+	} else {
+		fsid = cephCluster.Status.CephStatus.FSID
+	}
 
-				// do not create the rgw storageclass if the endpoint is not reachable
-				err := checkEndpointReachable(rgwEndpoint, 5*time.Second)
-				if err != nil {
-					continue
-				}
-				scc = StorageClassConfiguration{
-					storageClass: util.NewDefaultOBCStorageClass(
-						instance.Namespace,
-						util.GenerateNameForCephObjectStore(instance),
-					),
-					reconcileStrategy: ReconcileStrategy(scManagedResources.CephObjectStores.ReconcileStrategy),
-					isClusterExternal: true,
-				}
-				scc.storageClass.Name = util.GenerateNameForCephRgwStorageClass(instance)
+	rbdStorageID := util.CalculateCephRbdStorageID(fsid, getExternalModeRadosNamespaceName(instance))
+	cephFsStorageID := util.CalculateCephFsStorageID(fsid, "csi")
+
+	for _, d := range data {
+		if d.Kind != "StorageClass" {
+			continue
+		}
+		scManagedResources := &instance.Spec.ManagedResources
+		var scc StorageClassConfiguration
+		if d.Name == cephFsStorageClassName {
+			scc = StorageClassConfiguration{
+				storageClass: util.NewDefaultCephFsStorageClass(
+					instance.Namespace,
+					util.GenerateNameForCephFilesystem(instance.Name),
+					"rook-csi-cephfs-provisioner",
+					"rook-csi-cephfs-node",
+					instance.Namespace,
+					cephFsStorageID,
+					"",
+				),
+				reconcileStrategy: ReconcileStrategy(scManagedResources.CephFilesystems.ReconcileStrategy),
+				isClusterExternal: true,
 			}
+			scc.storageClass.Name = util.GenerateNameForCephFilesystemStorageClass(instance)
+		} else if d.Name == cephRbdStorageClassName {
+			scc = StorageClassConfiguration{
+				storageClass: util.NewDefaultRbdStorageClass(
+					instance.Namespace,
+					util.If(
+						util.IsDefaultPoolErasureCodingEnabled(instance.Spec.ManagedResources.CephBlockPools),
+						instance.Spec.ManagedResources.CephBlockPools.ErasureCodedMetadataPool,
+						util.GenerateNameForCephBlockPool(instance.Name),
+					),
+					"rook-csi-rbd-provisioner",
+					"rook-csi-rbd-node",
+					instance.Namespace,
+					rbdStorageID,
+					"",
+					instance.Spec.ManagedResources.CephBlockPools.DefaultStorageClass,
+					util.If(
+						util.IsDefaultPoolErasureCodingEnabled(instance.Spec.ManagedResources.CephBlockPools),
+						util.GenerateNameForCephBlockPool(instance.Name),
+						"",
+					),
+				),
+				reconcileStrategy: ReconcileStrategy(scManagedResources.CephBlockPools.ReconcileStrategy),
+				isClusterExternal: true,
+			}
+			scc.storageClass.Name = util.GenerateNameForCephBlockPoolStorageClass(instance)
+		} else if strings.HasPrefix(d.Name, cephRbdRadosNamespaceStorageClassNamePrefix) { // ceph-rbd-rados-namespace-<radosNamespaceName>
+			scc = StorageClassConfiguration{
+				storageClass: util.NewDefaultRbdStorageClass(
+					instance.Namespace,
+					util.GenerateNameForCephBlockPool(instance.Name),
+					"rook-csi-rbd-provisioner",
+					"rook-csi-rbd-node",
+					instance.Namespace,
+					rbdStorageID,
+					"",
+					scManagedResources.CephBlockPools.DefaultStorageClass,
+					"",
+				),
+				reconcileStrategy: ReconcileStrategy(scManagedResources.CephBlockPools.ReconcileStrategy),
+				isClusterExternal: true,
+			}
+			// update the storageclass name to rados storagesclass name
+			scc.storageClass.Name = fmt.Sprintf("%s-%s", instance.Name, d.Name)
+		} else if d.Name == cephRbdTopologyStorageClassName {
+			topologyConstrainedPools, err := getTopologyConstrainedPoolsExternalMode(d.Data)
+			if err != nil {
+				r.Log.Error(
+					err,
+					"Failed to get topologyConstrainedPools from external mode secret.",
+					"StorageClass",
+					klog.KRef(instance.Namespace, d.Name),
+				)
+				return err
+			}
+			scc = StorageClassConfiguration{
+				storageClass: util.NewDefaultNonResilientRbdStorageClass(
+					instance.Namespace,
+					topologyConstrainedPools,
+					"rook-csi-rbd-provisioner",
+					"rook-csi-rbd-node",
+					instance.Namespace,
+					rbdStorageID,
+					"",
+				),
+				isClusterExternal: true,
+			}
+			scc.storageClass.Name = util.GenerateNameForNonResilientCephBlockPoolStorageClass(instance)
+		} else if d.Name == cephRgwStorageClassName {
+			rgwEndpoint = d.Data[externalCephRgwEndpointKey]
+			// rgw-endpoint is no longer needed in the 'd.Data' dictionary,
+			// and can be deleted
+			// created an issue in rook to add `CephObjectStore` type directly in the JSON output
+			// https://github.com/rook/rook/issues/6165
+			delete(d.Data, externalCephRgwEndpointKey)
 
-			if scc.storageClass == nil {
+			// do not create the rgw storageclass if the endpoint is not reachable
+			err := checkEndpointReachable(rgwEndpoint, 5*time.Second)
+			if err != nil {
 				continue
 			}
-
-			// now sc is pointing to appropriate StorageClass,
-			// whose parameters have to be updated
-			for k, v := range d.Data {
-				scc.storageClass.Parameters[k] = v
+			scc = StorageClassConfiguration{
+				storageClass: util.NewDefaultOBCStorageClass(
+					instance.Namespace,
+					util.GenerateNameForCephObjectStore(instance),
+				),
+				reconcileStrategy: ReconcileStrategy(scManagedResources.CephObjectStores.ReconcileStrategy),
+				isClusterExternal: true,
 			}
-			if d.Name == cephRbdStorageClassName {
-				maps.Copy(rbdSCParameters, scc.storageClass.Parameters)
-			}
-			// add external mode label to storageclass
-			util.AddLabel(scc.storageClass, util.ExternalClassLabelKey, strconv.FormatBool(true))
-			availableSCCs = append(availableSCCs, scc)
+			scc.storageClass.Name = util.GenerateNameForCephRgwStorageClass(instance)
 		}
+
+		if scc.storageClass == nil {
+			continue
+		}
+
+		// now sc is pointing to appropriate StorageClass,
+		// whose parameters have to be updated
+		for k, v := range d.Data {
+			scc.storageClass.Parameters[k] = v
+		}
+		if d.Name == cephRbdStorageClassName {
+			maps.Copy(rbdSCParameters, scc.storageClass.Parameters)
+		}
+		// add external mode label to storageclass
+		util.AddLabel(scc.storageClass, util.ExternalClassLabelKey, strconv.FormatBool(true))
+		availableSCCs = append(availableSCCs, scc)
 	}
 
 	err = r.configureCsiDrivers(availableSCCs, instance)
@@ -563,7 +572,7 @@ func (r *StorageClusterReconciler) createExternalModeStorageClasses(sccs []Stora
 			radosNamespace := cephv1.CephBlockPoolRadosNamespace{}
 			key := types.NamespacedName{Name: radosNamespaceName, Namespace: namespace}
 			err := r.Get(context.TODO(), key, &radosNamespace)
-			if err != nil || radosNamespace.Status == nil || radosNamespace.Status.Phase != cephv1.ConditionType(util.PhaseReady) || radosNamespace.Status.Info["clusterID"] == "" {
+			if err != nil || radosNamespace.Status == nil || radosNamespace.Status.Phase != cephv1.ConditionType(ocsv1.PhaseReady) || radosNamespace.Status.Info["clusterID"] == "" {
 				r.Log.Info("Waiting for radosNamespace to be Ready. Skip reconciling StorageClass",
 					"radosNamespace", klog.KRef(key.Namespace, key.Name),
 					"StorageClass", klog.KRef("", sc.Name),
@@ -577,7 +586,7 @@ func (r *StorageClusterReconciler) createExternalModeStorageClasses(sccs []Stora
 			cephNFS := cephv1.CephNFS{}
 			key := types.NamespacedName{Name: sc.Parameters["nfsCluster"], Namespace: namespace}
 			err := r.Get(context.TODO(), key, &cephNFS)
-			if err != nil || cephNFS.Status == nil || cephNFS.Status.Phase != util.PhaseReady {
+			if err != nil || cephNFS.Status == nil || cephNFS.Status.Phase != ocsv1.PhaseReady {
 				r.Log.Info("Waiting for CephNFS to be Ready. Skip reconciling StorageClass",
 					"CephNFS", klog.KRef(key.Namespace, key.Name),
 					"StorageClass", klog.KRef("", sc.Name),

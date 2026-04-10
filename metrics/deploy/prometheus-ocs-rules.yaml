@@ -16,6 +16,152 @@ spec:
     - expr: |
         sum by (namespace, managedBy) (topk by (ceph_daemon) (1, label_replace(ceph_disk_occupation{job="rook-ceph-mgr"}, "device", "$1", "device", "/dev/(.*)")) * on(instance, device) group_left topk by (instance,device) (1, (rate(node_disk_write_time_seconds_total[1m]) / (clamp_min(rate(node_disk_writes_completed_total[1m]), 1)))))
       record: cluster:ceph_disk_latency_write:join_ceph_node_disk_rate1m
+  - name: cephfs-subvolume-mapping.rules
+    rules:
+    - record: odf_cephfs_subvolume_read_iops_with_pv
+      expr: |
+        label_replace(
+          ceph_mds_subvolume_metrics_avg_read_iops,
+          "subvolume", "$1", "subvolume_path", ".*/([^/]+)$"
+        )
+        * on(subvolume) group_left(
+            pv_name,          
+            pvc_namespace,         
+            fs_name,
+          )
+        label_replace(
+          label_replace(
+            label_replace(
+              ocs_cephfs_pv_metadata,
+              "pv_name", "$1", "name", "(.*)"
+            ),
+            "pvc_namespace", "$1", "namespace", "(.*)"
+          ),
+          "fs_name", "$1", "volume", "(.*)"
+        )
+      labels:
+        system_type: OCS
+        system_vendor: Red Hat
+    - record: odf_cephfs_subvolume_write_iops_with_pv
+      expr: |
+        label_replace(
+          ceph_mds_subvolume_metrics_avg_write_iops,
+          "subvolume", "$1", "subvolume_path", ".*/([^/]+)$"
+        )
+        * on(subvolume) group_left(
+            pv_name,          
+            pvc_namespace,         
+            fs_name,
+          )
+        label_replace(
+          label_replace(
+            label_replace(
+              ocs_cephfs_pv_metadata,
+              "pv_name", "$1", "name", "(.*)"
+            ),
+            "pvc_namespace", "$1", "namespace", "(.*)"
+          ),
+          "fs_name", "$1", "volume", "(.*)"
+        )
+      labels:
+        system_type: OCS
+        system_vendor: Red Hat
+    - record: odf_cephfs_subvolume_read_latency_msec_with_pv
+      expr: |
+        label_replace(
+          ceph_mds_subvolume_metrics_avg_read_lat_msec,
+          "subvolume", "$1", "subvolume_path", ".*/([^/]+)$"
+        )
+        * on(subvolume) group_left(
+            pv_name,          
+            pvc_namespace,         
+            fs_name,
+          )
+        label_replace(
+          label_replace(
+            label_replace(
+              ocs_cephfs_pv_metadata,
+              "pv_name", "$1", "name", "(.*)"
+            ),
+            "pvc_namespace", "$1", "namespace", "(.*)"
+          ),
+          "fs_name", "$1", "volume", "(.*)"
+        )
+      labels:
+        system_type: OCS
+        system_vendor: Red Hat
+    - record: odf_cephfs_subvolume_write_latency_msec_with_pv
+      expr: |
+        label_replace(
+          ceph_mds_subvolume_metrics_avg_write_lat_msec,
+          "subvolume", "$1", "subvolume_path", ".*/([^/]+)$"
+        )
+        * on(subvolume) group_left(
+            pv_name,          
+            pvc_namespace,         
+            fs_name,
+          )
+        label_replace(
+          label_replace(
+            label_replace(
+              ocs_cephfs_pv_metadata,
+              "pv_name", "$1", "name", "(.*)"
+            ),
+            "pvc_namespace", "$1", "namespace", "(.*)"
+          ),
+          "fs_name", "$1", "volume", "(.*)"
+        )
+      labels:
+        system_type: OCS
+        system_vendor: Red Hat
+    - record: odf_cephfs_subvolume_read_throughput_bps_with_pv
+      expr: |
+        label_replace(
+          ceph_mds_subvolume_metrics_avg_read_tp_Bps,
+          "subvolume", "$1", "subvolume_path", ".*/([^/]+)$"
+        )
+        * on(subvolume) group_left(
+            pv_name,          
+            pvc_namespace,         
+            fs_name,
+          )
+        label_replace(
+          label_replace(
+            label_replace(
+              ocs_cephfs_pv_metadata,
+              "pv_name", "$1", "name", "(.*)"
+            ),
+            "pvc_namespace", "$1", "namespace", "(.*)"
+          ),
+          "fs_name", "$1", "volume", "(.*)"
+        )
+      labels:
+        system_type: OCS
+        system_vendor: Red Hat
+    - record: odf_cephfs_subvolume_write_throughput_bps_with_pv
+      expr: |
+        label_replace(
+          ceph_mds_subvolume_metrics_avg_write_tp_Bps,
+          "subvolume", "$1", "subvolume_path", ".*/([^/]+)$"
+        )
+        * on(subvolume) group_left(
+            pv_name,          
+            pvc_namespace,         
+            fs_name,
+          )
+        label_replace(
+          label_replace(
+            label_replace(
+              ocs_cephfs_pv_metadata,
+              "pv_name", "$1", "name", "(.*)"
+            ),
+            "pvc_namespace", "$1", "namespace", "(.*)"
+          ),
+          "fs_name", "$1", "volume", "(.*)"
+        )
+      labels:
+        system_type: OCS
+        system_vendor: Red Hat
   - name: ODF_standardized_metrics.rules
     rules:
     - expr: |
@@ -95,7 +241,7 @@ spec:
         severity_level: warning
         storage_type: ceph
       expr: |
-        (ocs_pool_mirroring_image_health{job="ocs-metrics-exporter"}  * on (namespace, managedBy, rados_namespace) group_left() (max by(namespace, managedBy, rados_namespace) (ocs_pool_mirroring_status{job="ocs-metrics-exporter"}))) == 1
+        (ocs_pool_mirroring_image_health{job="ocs-metrics-exporter"}  * on (namespace, managedBy, rados_namespace, consumer_name) group_left() (max by(namespace, managedBy, rados_namespace, consumer_name) (ocs_pool_mirroring_status{job="ocs-metrics-exporter"}))) == 1
       for: 1m
       labels:
         mirroring_image_status: unknown
@@ -111,7 +257,7 @@ spec:
         severity_level: warning
         storage_type: ceph
       expr: |
-        (ocs_pool_mirroring_image_health{job="ocs-metrics-exporter"}  * on (namespace, managedBy, rados_namespace) group_left() (max by(namespace, managedBy, rados_namespace) (ocs_pool_mirroring_status{job="ocs-metrics-exporter"}))) == 2
+        (ocs_pool_mirroring_image_health{job="ocs-metrics-exporter"}  * on (namespace, managedBy, rados_namespace, consumer_name) group_left() (max by(namespace, managedBy, rados_namespace, consumer_name) (ocs_pool_mirroring_status{job="ocs-metrics-exporter"}))) == 2
       for: 1m
       labels:
         mirroring_image_status: warning
@@ -127,43 +273,40 @@ spec:
         severity_level: error
         storage_type: ceph
       expr: |
-        (ocs_pool_mirroring_image_health{job="ocs-metrics-exporter"}  * on (namespace, managedBy, rados_namespace) group_left() (max by(namespace, managedBy, rados_namespace) (ocs_pool_mirroring_status{job="ocs-metrics-exporter"}))) == 3
+        (ocs_pool_mirroring_image_health{job="ocs-metrics-exporter"}  * on (namespace, managedBy, rados_namespace, consumer_name) group_left() (max by(namespace, managedBy, rados_namespace, consumer_name) (ocs_pool_mirroring_status{job="ocs-metrics-exporter"}))) == 3
       for: 10s
       labels:
         mirroring_image_status: error
         severity: critical
     - alert: ODFPersistentVolumeMirrorStatus
       annotations:
-        description: Persistent volume {{ $labels.name }}/{{ $labels.namespace }}
-          is not mirrored properly to peer site {{ $labels.site_name }} for more than
-          1m. RBD image={{ $labels.image }} and CephBlockPool={{ $labels.pool_name
-          }}. Please check namespace:cluster {{ $labels.namespace }}:{{ $labels.managedBy
-          }}.
-        message: Persistent volume {{ $labels.name }}/{{ $labels.namespace }} is not
-          mirrored properly to peer site {{ $labels.site_name }} in namespace:cluster
-          {{ $labels.namespace }}:{{ $labels.managedBy }}.
+        description: Persistent volume {{ $labels.name }} is not mirrored properly
+          to peer site {{ $labels.site_name }} for more than 1m. RBD image={{ $labels.image
+          }} and CephBlockPool={{ $labels.pool_name }}. Please check namespace {{
+          $labels.namespace }}.
+        message: Persistent volume {{ $labels.name }} is not mirrored properly to
+          peer site {{ $labels.site_name }} in namespace {{ $labels.namespace }}.
         runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/openshift-container-storage-operator/ODFPersistentVolumeMirrorStatus.md
         severity_level: error
         storage_type: ceph
       expr: |
-        ocs_rbd_mirror_image_state{job="ocs-metrics-exporter"} * on(image,pool_name) group_left(name,namespace,managedBy) ocs_rbd_pv_metadata{job="ocs-metrics-exporter"} == 1
+        ocs_rbd_mirror_image_state{job="ocs-metrics-exporter"} * on(image,pool_name,consumer_name) group_left(name) ocs_rbd_pv_metadata{job="ocs-metrics-exporter"} == 1
       for: 1m
       labels:
         severity: critical
     - alert: ODFPersistentVolumeMirrorStatus
       annotations:
-        description: Status unknown for Persistent volume {{ $labels.name }}/{{ $labels.namespace
-          }} to peer site {{ $labels.site_name }} for more than 1m. RBD image={{ $labels.image
-          }} and CephBlockPool={{ $labels.pool_name }}. Please check namespace:cluster
-          {{ $labels.namespace }}:{{ $labels.managedBy }}
-        message: Status unknown for Persistent volume {{ $labels.name }}/{{ $labels.namespace
-          }} mirroring to peer site {{ $labels.site_name }} in namespace:cluster {{
-          $labels.namespace }}:{{ $labels.managedBy }}.
+        description: Status unknown for Persistent volume {{ $labels.name }} to peer
+          site {{ $labels.site_name }} for more than 1m. RBD image={{ $labels.image
+          }} and CephBlockPool={{ $labels.pool_name }}. Please check namespace {{
+          $labels.namespace }}.
+        message: Status unknown for Persistent volume {{ $labels.name }} mirroring
+          to peer site {{ $labels.site_name }} in namespace {{ $labels.namespace }}.
         runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/openshift-container-storage-operator/ODFPersistentVolumeMirrorStatus.md
         severity_level: warning
         storage_type: ceph
       expr: |
-        ocs_rbd_mirror_image_state{job="ocs-metrics-exporter"} * on(image,pool_name) group_left(name,namespace,managedBy) ocs_rbd_pv_metadata{job="ocs-metrics-exporter"} == 0
+        ocs_rbd_mirror_image_state{job="ocs-metrics-exporter"} * on(image,pool_name,consumer_name) group_left(name) ocs_rbd_pv_metadata{job="ocs-metrics-exporter"} == 0
       for: 1m
       labels:
         severity: warning
@@ -260,26 +403,17 @@ spec:
     rules:
     - alert: ODFRBDClientBlocked
       annotations:
-        description: An RBD client might be blocked by Ceph on node {{ $labels.node_name
-          }} in namespace:cluster {{ $labels.namespace }}:{{ $labels.managedBy }}.
-          This alert is triggered when the ocs_rbd_client_blocklisted metric reports
-          a value of 1 for the node and there are pods in a CreateContainerError state
-          on the node. This may cause the filesystem for the PVCs to be in a read-only
-          state. Please check the pod description for more details.
-        message: An RBD client might be blocked by Ceph on node {{ $labels.node_name
-          }} in namespace:cluster {{ $labels.namespace }}:{{ $labels.managedBy }}.
+        description: An RBD client is blocklisted by Ceph on node {{ $labels.node
+          }} for more than 30 minutes in namespace:cluster {{ $labels.namespace }}:{{
+          $labels.managedBy }}. This may cause PVCs on this node to become read-only.
+          Check for network partitions or crashed RBD client processes.
+        message: RBD client blocklisted on node {{ $labels.node }} in namespace:cluster
+          {{ $labels.namespace }}:{{ $labels.managedBy }}.
         runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/openshift-container-storage-operator/ODFRBDClientBlocked.md
         severity_level: error
       expr: |
-        (
-          ocs_rbd_client_blocklisted{node=~".+"} == 1
-        )
-        and on(node) (
-          kube_pod_container_status_waiting_reason{reason="CreateContainerError"}
-          * on(pod, namespace, managedBy) group_left(node)
-          kube_pod_info
-        ) > 0
-      for: 10s
+        ocs_rbd_client_blocklisted{node=~".+", job="ocs-metrics-exporter"} == 1
+      for: 30m
       labels:
         severity: warning
   - name: ocs-encryption-alert.rules
@@ -527,21 +661,10 @@ spec:
     - alert: ODFNodeLatencyHighOnOSDNodes
       expr: |
         max_over_time(
-          (
-            probe_icmp_duration_seconds{phase="rtt", job="odf-blackbox-exporter"}
-            and on(instance)
-            (
-              count by (hostname) (ceph_osd_metadata)
-              * on(hostname) group_left(instance)
-              label_replace(
-                label_replace(
-                  max by (node, internal_ip) (kube_node_info),
-                  "hostname", "$1", "node", "(.+)"
-                ),
-                "instance", "$1", "internal_ip", "(.+)"
-              )
-            )
-          )[24h:]
+            probe_icmp_duration_seconds{phase="rtt",
+            job="odf-blackbox-exporter",
+            daemon_type="osd"
+            }[24h:]
         ) > 0.010
       for: 10m
       labels:
@@ -555,21 +678,10 @@ spec:
     - alert: ODFNodeLatencyHighOnNonOSDNodes
       expr: |
         max_over_time(
-          (
-            probe_icmp_duration_seconds{phase="rtt", job="odf-blackbox-exporter"}
-            unless on(instance)
-            (
-              count by (hostname) (ceph_osd_metadata)
-              * on(hostname) group_left(instance)
-              label_replace(
-                label_replace(
-                  max by (node, internal_ip) (kube_node_info),
-                  "hostname", "$1", "node", "(.+)"
-                ),
-                "instance", "$1", "internal_ip", "(.+)"
-              )
-            )
-          )[24h:]
+            probe_icmp_duration_seconds{phase="rtt",
+            job="odf-blackbox-exporter",
+            daemon_type="mon"
+            }[24h:]
         ) > 0.100
       for: 10m
       labels:

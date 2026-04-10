@@ -47,3 +47,11 @@ rules:
     - watch
     - create
     - delete
+- apiGroups:
+    - monitoring.coreos.com
+  resourceNames:
+    - k8s
+  resources:
+    - prometheuses/api
+  verbs:
+    - get

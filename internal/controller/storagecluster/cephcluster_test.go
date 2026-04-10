@@ -77,7 +77,7 @@ func TestEnsureCephCluster(t *testing.T) {
 		{
 			label:            "Update expanding CephCluster",
 			cephClusterState: rookCephv1.ClusterStateUpdating,
-			reconcilerPhase:  ocsutil.PhaseClusterExpanding,
+			reconcilerPhase:  ocsv1.PhaseClusterExpanding,
 		},
 	}
 
@@ -104,7 +104,7 @@ func TestEnsureCephCluster(t *testing.T) {
 		// To test for cluster expansion, the expected CephCluster must
 		// have more more storage devices defined than the existing
 		// CephCluster.
-		if c.reconcilerPhase == ocsutil.PhaseClusterExpanding {
+		if c.reconcilerPhase == ocsv1.PhaseClusterExpanding {
 			createErr := reconciler.Create(context.TODO(), fakeStorageClass)
 			assert.NilError(t, createErr)
 

@@ -119,7 +119,7 @@ func (r *StorageClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return err
 	}
 
-	r.recorder = util.NewEventReporter(mgr.GetEventRecorderFor("controller_storagecluster"))
+	r.recorder = util.NewEventReporter(mgr.GetEventRecorderFor("controller_storagecluster")) //nolint:staticcheck // TODO: migrate to new events API
 
 	// Compose a predicate that is an OR of the specified predicates
 	scPredicate := util.ComposePredicates(
@@ -248,6 +248,27 @@ func (r *StorageClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		},
 	}
 
+	routeEndpointPredicate := predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return true
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return true
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			if e.ObjectOld == nil || e.ObjectNew == nil {
+				return false
+			}
+			oldObj := e.ObjectOld.(*routev1.Route)
+			newObj := e.ObjectNew.(*routev1.Route)
+			return !reflect.DeepEqual(oldObj.Spec.TLS, newObj.Spec.TLS) ||
+				!reflect.DeepEqual(oldObj.Status.Ingress, newObj.Status.Ingress)
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return false
+		},
+	}
+
 	build := ctrl.NewControllerManagedBy(mgr).
 		For(&ocsv1.StorageCluster{}, builder.WithPredicates(scPredicate)).
 		Owns(&cephv1.CephCluster{}, builder.WithPredicates(cephClusterIgnoreTimeUpdatePredicate)).
@@ -288,6 +309,15 @@ func (r *StorageClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			builder.WithPredicates(
 				util.NamePredicate(OdfInfoConfigMapName),
 				util.NamespacePredicate(r.OperatorNamespace),
+			),
+		).
+		Watches(
+			&routev1.Route{},
+			enqueueStorageClusterRequest,
+			builder.WithPredicates(
+				util.NamePredicate(util.NoobaaS3RouteName),
+				util.NamespacePredicate(r.OperatorNamespace),
+				routeEndpointPredicate,
 			),
 		).
 		Watches(&ocsclientv1a1.StorageClient{}, enqueueStorageClusterRequest).

@@ -5,6 +5,10 @@ KUSTOMIZE=$(LOCALBIN)/kustomize
 CONTROLLER_GEN_VERSION=v0.17.0
 CONTROLLER_GEN=$(LOCALBIN)/controller-gen
 
+# Container command detection (podman or docker)
+CONTAINER_CMD ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
+GOARCH ?= $(shell go env GOARCH 2>/dev/null)
+METRICS_DEVEL_IMAGE = ocs-metrics-exporter:devel
 
 .PHONY: \
 	build \
@@ -22,7 +26,9 @@ CONTROLLER_GEN=$(LOCALBIN)/controller-gen
 	update-generated \
 	ocs-operator-ci \
 	unit-test \
-	deps-update
+	deps-update \
+	containerized-metrics-build \
+	containerized-metrics-test
 
 deps-update:
 	set -e
@@ -54,6 +60,24 @@ ocs-operator: build
 ocs-metrics-exporter: build
 	@echo "Building the ocs-metrics-exporter image"
 	hack/build-metrics-exporter.sh
+
+# Build the devel container with ceph C headers for metrics exporter
+.metrics-devel-container-id: metrics/Dockerfile.devel
+	@test -n "$(CONTAINER_CMD)" || { echo "podman or docker not found"; exit 1; }
+	[ ! -f .metrics-devel-container-id ] || $(CONTAINER_CMD) rmi $(METRICS_DEVEL_IMAGE) 2>/dev/null || true
+	$(RM) .metrics-devel-container-id
+	$(CONTAINER_CMD) build --build-arg GOARCH=$(GOARCH) -t $(METRICS_DEVEL_IMAGE) -f metrics/Dockerfile.devel .
+	$(CONTAINER_CMD) inspect -f '{{.Id}}' $(METRICS_DEVEL_IMAGE) > .metrics-devel-container-id
+
+# Build metrics exporter inside a container (provides ceph C headers for go-ceph CGO)
+containerized-metrics-build: .metrics-devel-container-id
+	$(CONTAINER_CMD) run --rm -v $(CURDIR):/workspace $(METRICS_DEVEL_IMAGE) \
+		go build -mod=vendor ./metrics/...
+
+# Run metrics exporter tests inside a container
+containerized-metrics-test: .metrics-devel-container-id
+	$(CONTAINER_CMD) run --rm -v $(CURDIR):/workspace $(METRICS_DEVEL_IMAGE) \
+		go test -mod=vendor -v -cover ./metrics/...
 
 gen-protobuf:
 	@echo "Generating protobuf files for gRPC services"
@@ -108,14 +132,15 @@ unit-test:
 ocs-operator-ci: shellcheck-test golangci-lint unit-test verify-deps verify-generated verify-latest-csv verify-operator-bundle
 
 # Generate code
+# Explicit paths exclude metrics/ which uses go-ceph CGO and breaks controller-gen.
 generate: controller-gen
 	@echo Updating generated code
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..." paths="./cmd/..." paths="./internal/..." paths="./pkg/..." paths="./services/..."
 
 # Generate manifests e.g. CRD, RBAC etc.
 manifests: controller-gen
 	@echo Updating generated manifests
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:generateEmbeddedObjectMeta=true,allowDangerousTypes=true paths=./api/... webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:generateEmbeddedObjectMeta=true,allowDangerousTypes=true webhook paths="./api/..." paths="./cmd/..." paths="./internal/..." paths="./pkg/..." paths="./services/..." output:crd:artifacts:config=config/crd/bases
 
 verify-deps: deps-update
 	@echo "Verifying dependency files"
