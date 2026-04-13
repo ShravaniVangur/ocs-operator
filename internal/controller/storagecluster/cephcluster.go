@@ -151,6 +151,13 @@ func (obj *ocsCephCluster) ensureCreated(r *StorageClusterReconciler, sc *ocsv1.
 		}
 	}
 
+	if sc.Spec.HostNetwork {
+		r.Log.Info("WARNING: spec.hostNetwork is deprecated and will be removed in a future release. Use spec.network.hostNetwork instead.",
+			"StorageCluster", klog.KRef(sc.Namespace, sc.Name))
+		r.recorder.ReportIfNotPresent(sc, corev1.EventTypeWarning, "DeprecatedField",
+			"spec.hostNetwork is deprecated and will be removed in a future release. Use spec.network.hostNetwork instead.")
+	}
+
 	// Define a new CephCluster object
 	if sc.Spec.ExternalStorage.Enable {
 		extRArr, ok := externalOCSResources[sc.UID]

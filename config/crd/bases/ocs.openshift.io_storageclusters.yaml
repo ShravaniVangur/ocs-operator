@@ -614,7 +614,10 @@ spec:
                   or racks.
                 type: boolean
               hostNetwork:
-                description: HostNetwork defaults to false
+                description: |-
+                  HostNetwork defaults to false.
+                  Deprecated: This field is deprecated and will be removed in a future release.
+                  Use spec.network.hostNetwork instead.
                 type: boolean
               labelSelector:
                 description: LabelSelector is used to specify custom labels of nodes
