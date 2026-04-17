@@ -2320,12 +2320,19 @@ func (s *OCSProviderServer) appendOBCResources(
 		secret.Namespace = remoteOBCNamespace
 		obc.Name = remoteOBCName
 		obc.Namespace = remoteOBCNamespace
+		obc.Annotations = nil
+		obc.Labels = nil
 		statusSubResource := pb.SubResource_SUB_RESOURCE_STATUS
 
 		records = append(records,
 			kubeObjectWithOpRecord{
 				kubeObject: ob,
 				clientOp:   pb.KubeClientOp_CREATE_OR_UPDATE,
+			},
+			kubeObjectWithOpRecord{
+				kubeObject:  ob,
+				clientOp:    pb.KubeClientOp_UPDATE_SUB_RESOURCE,
+				subResource: &statusSubResource,
 			},
 			kubeObjectWithOpRecord{
 				kubeObject: configMap,

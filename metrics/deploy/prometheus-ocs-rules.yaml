@@ -641,7 +641,7 @@ spec:
     rules:
     - alert: CephFSStaleSubvolume
       annotations:
-        description: Number of CephFS subvolumes are greater than the number of PersistentVolumes for consumer {{labels.consumer_name}}.
+        description: Number of CephFS subvolumes are greater than the number of PersistentVolumes for consumer {{ $labels.consumer_name }}.
         message: There could be stale subvolumes that are not claimed or utilized. Please investigate for possible stale or orphaned subvolumes.
         runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/openshift-container-storage-operator/CephFSStaleSubvolume.md
         severity_level: warning
@@ -653,7 +653,7 @@ spec:
     rules:
     - alert: CephFSOrphanedSnapshot
       annotations:
-        description: Number of CephFS snapshots are greater than the number of SnapshotContents for consumer {{labels.consumer_name}}.
+        description: Number of CephFS snapshots are greater than the number of SnapshotContents for consumer {{ $labels.consumer_name}}.
         message: There could be orphaned snapshots that are not claimed or utilized. Please investigate for possible orphaned snapshots.
         runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/openshift-container-storage-operator/CephFSOrphanedSnapshot.md
         severity_level: warning
