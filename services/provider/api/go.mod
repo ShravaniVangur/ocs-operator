@@ -65,6 +65,7 @@ require (
 	github.com/prometheus/common v0.67.5 // indirect
 	github.com/prometheus/procfs v0.20.1 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
+	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.opentelemetry.io/otel v1.43.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.43.0 // indirect
@@ -97,6 +98,8 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.0 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
+
+replace github.com/noobaa/noobaa-operator/v5 v5.21.0 => github.com/noobaa/noobaa-operator/v5 v5.0.0-20260409182054-d38322829145
 
 // This tag doesn't exist, but is imported by github.com/portworx/sched-ops.
 exclude github.com/kubernetes-incubator/external-storage v0.20.4-openstorage-rc2

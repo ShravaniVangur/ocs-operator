@@ -22,6 +22,7 @@ import (
 	conditionsv1 "github.com/openshift/custom-resource-status/conditions/v1"
 	"github.com/operator-framework/operator-lib/conditions"
 	ocsclientv1a1 "github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
+	ocstlsv1 "github.com/red-hat-storage/ocs-tls-profiles/api/v1"
 	cephv1 "github.com/rook/rook/pkg/apis/ceph.rook.io/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -332,7 +333,8 @@ func (r *StorageClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		).
 		Watches(&ocsclientv1a1.StorageClient{}, enqueueStorageClusterRequest).
 		// Watch Nodes with OCS label to trigger Blackbox Probe updates
-		Watches(&corev1.Node{}, enqueueStorageClusterRequest, builder.WithPredicates(ocsNodeLabelPredicate))
+		Watches(&corev1.Node{}, enqueueStorageClusterRequest, builder.WithPredicates(ocsNodeLabelPredicate)).
+		Watches(&ocstlsv1.TLSProfile{}, enqueueStorageClusterRequest, builder.WithPredicates(predicate.GenerationChangedPredicate{}))
 
 	if os.Getenv("SKIP_NOOBAA_CRD_WATCH") != "true" {
 		build.Owns(&nbv1.NooBaa{}, builder.WithPredicates(noobaaIgnoreTimeUpdatePredicate))

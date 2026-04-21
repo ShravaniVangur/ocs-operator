@@ -342,7 +342,13 @@ func TestSetNooBaaDesiredState(t *testing.T) {
 			assert.Failf(t, "[%s] unable to set env_var %s", c.label, dbEnvVar)
 		}
 
+		scheme := createFakeScheme(t)
+		client := fake.NewClientBuilder().WithScheme(scheme).Build()
 		reconciler := StorageClusterReconciler{
+			ctx:               context.TODO(),
+			Client:            client,
+			Scheme:            scheme,
+			OperatorNamespace: "openshift-storage",
 			OperatorCondition: newStubOperatorCondition(),
 			Log:               logf.Log.WithName("controller_storagecluster_test"),
 		}

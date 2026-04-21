@@ -30,6 +30,8 @@ const (
 	LocalStorageConsumerConfigMapName = "storageconsumer-internal"
 	// KMSConfigMapName is the name configmap which has KMS config details
 	KMSConfigMapName = "ocs-kms-connection-details"
+	// Name of the TLSProfile to watch for applying TLS configuration
+	TLSProfileName = "ocs-tls-profile"
 )
 
 var (

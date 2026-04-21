@@ -8,6 +8,8 @@ replace github.com/red-hat-storage/ocs-operator/api/v4 => ../api
 
 replace github.com/red-hat-storage/ocs-operator/v4 => ../
 
+replace github.com/noobaa/noobaa-operator/v5 v5.21.0 => github.com/noobaa/noobaa-operator/v5 v5.0.0-20260409182054-d38322829145
+
 replace github.com/portworx/sched-ops => github.com/portworx/sched-ops v0.20.4-openstorage-rc3 // required by rook
 
 exclude (
