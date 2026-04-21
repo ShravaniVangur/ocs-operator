@@ -29,7 +29,7 @@ var K8sMetricsServiceMonitorSpecTemplate = promv1.ServiceMonitorSpec{
 		{
 			Port:          "web",
 			Path:          "/federate",
-			Scheme:        "https",
+			Scheme:        ptr.To(promv1.SchemeHTTPS),
 			ScrapeTimeout: "1m",
 			Interval:      "2m",
 			HonorLabels:   true,
@@ -50,12 +50,18 @@ var K8sMetricsServiceMonitorSpecTemplate = promv1.ServiceMonitorSpec{
 					TargetLabel: "pod",
 				},
 			},
-			TLSConfig: &promv1.TLSConfig{
-				SafeTLSConfig: promv1.SafeTLSConfig{
-					InsecureSkipVerify: ptr.To(false),
-					ServerName:         ptr.To("prometheus-k8s.openshift-monitoring.svc"),
+			HTTPConfigWithProxyAndTLSFiles: promv1.HTTPConfigWithProxyAndTLSFiles{
+				HTTPConfigWithTLSFiles: promv1.HTTPConfigWithTLSFiles{
+					TLSConfig: &promv1.TLSConfig{
+						SafeTLSConfig: promv1.SafeTLSConfig{
+							InsecureSkipVerify: ptr.To(false),
+							ServerName:         ptr.To("prometheus-k8s.openshift-monitoring.svc"),
+						},
+						TLSFilesConfig: promv1.TLSFilesConfig{
+							CAFile: "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt",
+						},
+					},
 				},
-				CAFile: "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt",
 			},
 			Params:          params,
 			BearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token",

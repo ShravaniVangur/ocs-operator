@@ -1425,7 +1425,7 @@ spec:
       status: {}
 `
 
-const Sha256_deploy_crds_noobaa_io_noobaas_yaml = "38de565d60a559d52856d009eac5596b13fc2aa42ab12a4663c0a9a6ae2b5a5f"
+const Sha256_deploy_crds_noobaa_io_noobaas_yaml = "6cdd4f5aaa21ba8c450c5e00d6f8c38f43357b4dc2c22f786dedeaebf3c69618"
 
 const File_deploy_crds_noobaa_io_noobaas_yaml = `---
 apiVersion: apiextensions.k8s.io/v1
@@ -2644,6 +2644,9 @@ spec:
                       schedule:
                         description: Schedule the schedule for the database backup
                           in cron format.
+                        pattern: ^((((\d+,)+\d+|(\d+(\/|-|#)\d+)|\d+L?|\*(\/\d+)?|L(-\d+)?|\?|[A-Z]{3}(-[A-Z]{3})?)
+                          ?){5,7})|(@(annually|yearly|monthly|weekly|daily|hourly|reboot))|(@every
+                          (\d+(ns|us|µs|ms|s|m|h))+)$
                         type: string
                       volumeSnapshot:
                         description: |-
@@ -4695,7 +4698,7 @@ spec:
         secretName: AGENT_CONFIG_SECRET_NAME
 `
 
-const Sha256_deploy_internal_prometheus_rules_yaml = "9dba8cfe7b655d3467b091531c95e6d34e8bd179f36ece6eaf3cff8ef73df23d"
+const Sha256_deploy_internal_prometheus_rules_yaml = "dac4b932bd715af0ae7a5f833dec0cd168a67a699c6e83f0b38eb5f90ba44dd1"
 
 const File_deploy_internal_prometheus_rules_yaml = `apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
@@ -4745,13 +4748,13 @@ spec:
         system_vendor: Red Hat
       record: odf_system_raw_capacity_used_bytes
     - expr: |
-        sum by (namespace, managedBy, job, service) (rate(NooBaa_providers_ops_read_num[5m]) + rate(NooBaa_providers_ops_write_num[5m]))
+        sum by (namespace, managedBy, job, service) (rate(NooBaa_providers_ops_read_count[5m]) + rate(NooBaa_providers_ops_write_count[5m]))
       labels:
         system_type: OCS
         system_vendor: Red Hat
       record: odf_system_iops_total_bytes
     - expr: |
-        sum by (namespace, managedBy, job, service) (rate(NooBaa_providers_bandwidth_read_size[5m]) + rate(NooBaa_providers_bandwidth_write_size[5m]))
+        sum by (namespace, managedBy, job, service) (rate(NooBaa_providers_bandwidth_read_size_total[5m]) + rate(NooBaa_providers_bandwidth_write_size_total[5m]))
       labels:
         system_type: OCS
         system_vendor: Red Hat
@@ -4914,6 +4917,7 @@ spec:
         description: A NooBaa system is approaching its capacity, usage is more than
           85%
         message: A NooBaa System Is Approaching Its Capacity
+        runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/openshift-container-storage-operator/NooBaaSystemCapacityWarning85.md
         severity_level: warning
         storage_type: NooBaa
       expr: |
@@ -4926,6 +4930,7 @@ spec:
         description: A NooBaa system is approaching its capacity, usage is more than
           95%
         message: A NooBaa System Is Approaching Its Capacity
+        runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/openshift-container-storage-operator/NooBaaSystemCapacityWarning95.md
         severity_level: critical
         storage_type: NooBaa
       expr: |
@@ -4937,6 +4942,7 @@ spec:
       annotations:
         description: A NooBaa system approached its capacity, usage is at 100%
         message: A NooBaa System Approached Its Capacity
+        runbook_url: https://github.com/openshift/runbooks/blob/master/alerts/openshift-container-storage-operator/NooBaaSystemCapacityWarning100.md
         severity_level: critical
         storage_type: NooBaa
       expr: |
@@ -5293,7 +5299,7 @@ spec:
       noobaa-s3-svc: "true"
 `
 
-const Sha256_deploy_internal_statefulset_core_yaml = "34da89373b8398adb670d779a35f5c5a94365da99b5a2db65715fd62a7638d5c"
+const Sha256_deploy_internal_statefulset_core_yaml = "3dba40ad6babb033832e999680f333849bf3f194a24aa1163587529315ebe8da"
 
 const File_deploy_internal_statefulset_core_yaml = `apiVersion: apps/v1
 kind: StatefulSet
@@ -5416,6 +5422,7 @@ spec:
                   key: NOOBAA_VERSION_AUTH_ENABLED
             - name: POSTGRES_HOST
               value: "noobaa-db-pg-0.noobaa-db-pg"
+            - name: POSTGRES_HOST_RO
             - name: POSTGRES_PORT
             - name: POSTGRES_DBNAME
             - name: POSTGRES_USER
@@ -5502,7 +5509,7 @@ spec:
                   resource: limits.memory
 `
 
-const Sha256_deploy_internal_statefulset_postgres_db_yaml = "cd739b491f35e77972c55078e6b1ea1362f3897194ed9c89fcf962a1ad6a4c3c"
+const Sha256_deploy_internal_statefulset_postgres_db_yaml = "53b628aaceffc1952efed5ed1131f16461fde6eb78c1a5f0f281f3efc30c30b4"
 
 const File_deploy_internal_statefulset_postgres_db_yaml = `apiVersion: apps/v1
 kind: StatefulSet
@@ -5581,7 +5588,7 @@ spec:
           app: noobaa
       spec:
         accessModes:
-          - ReadWriteOnce
+          - ReadWriteOncePod
         resources:
           requests:
             storage: 50Gi
@@ -6271,7 +6278,7 @@ s3 ls s3://first.bucket
 ` + "`" + `` + "`" + `` + "`" + `
 `
 
-const Sha256_deploy_olm_noobaa_operator_clusterserviceversion_yaml = "3b11ab7cce6a4dfc36ad13f75b37821c8e200aec4cf21007208948e74ce9cc44"
+const Sha256_deploy_olm_noobaa_operator_clusterserviceversion_yaml = "4316a5d3ea52ed0e82489ad380b596f41e3675737b5d5ad80e403759f39fc128"
 
 const File_deploy_olm_noobaa_operator_clusterserviceversion_yaml = `apiVersion: operators.coreos.com/v1alpha1
 kind: ClusterServiceVersion
@@ -6292,7 +6299,7 @@ metadata:
 spec:
   displayName: NooBaa Operator
   version: "999.999.999-placeholder"
-  minKubeVersion: 1.16.0
+  minKubeVersion: 1.22.0
   maturity: alpha
   provider:
     name: NooBaa
@@ -6390,7 +6397,7 @@ spec:
   sourceNamespace: default
 `
 
-const Sha256_deploy_operator_yaml = "44022d49f1e87196410ff28589fca9001c25928957dfa3db208eab58220d364d"
+const Sha256_deploy_operator_yaml = "49b1f15cdda417e6cd5b99dd162ca666e24bf18184f5abc45eaaa690da6d3898"
 
 const File_deploy_operator_yaml = `apiVersion: apps/v1
 kind: Deployment
@@ -6398,6 +6405,8 @@ metadata:
   name: noobaa-operator
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       noobaa-operator: deployment
@@ -7162,5 +7171,86 @@ metadata:
   labels:
     app: prometheus-adapter
   name: custom-metrics-prometheus-adapter
+`
+
+const Sha256_deploy_warp_warp_job_yaml = "dab54e11a74caf45f5cd0f5b54c88c3937a1837e00744164f670f2dad58cefc4"
+
+const File_deploy_warp_warp_job_yaml = `apiVersion: batch/v1
+kind: Job
+metadata:
+  name: warp-job
+spec:
+  template:
+    spec:
+      containers:
+      - name: warp-job
+        env:
+          - name: WARP_ACCESS_KEY
+          - name: WARP_SECRET_KEY
+        image: "minio/warp:latest"
+        imagePullPolicy: Always
+      restartPolicy: Never
+  backoffLimit: 0
+
+`
+
+const Sha256_deploy_warp_warp_svc_yaml = "b9d0fff93a030ab846817d6bbdbe85a52b0277312f5f1c8933a7cc4a44a0f6c5"
+
+const File_deploy_warp_warp_svc_yaml = `apiVersion: v1
+kind: Service
+metadata:
+  name: warp
+  labels:
+    app: warp
+spec:
+  publishNotReadyAddresses: true
+  clusterIP: None
+  ports:
+    - port: 7761
+      name: warp
+  selector:
+    app: warp`
+
+const Sha256_deploy_warp_warp_yaml = "869bfc23eaf9c79ef03d8315257c0e63136cda2772c00353bff54e4f699be471"
+
+const File_deploy_warp_warp_yaml = `apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: warp
+  labels:
+    app: warp
+spec:
+  serviceName: warp
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      app: warp
+  template:
+    metadata:
+      name: warp
+      labels:
+        app: warp
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - warp
+              topologyKey: "kubernetes.io/hostname"
+      containers:
+        - name: warp
+          image: "minio/warp:latest"
+          imagePullPolicy: Always
+          args:
+            - client
+          ports:
+            - name: http
+              containerPort: 7761
+
 `
 

@@ -76,6 +76,15 @@ func (r *StorageClusterReconciler) initializeImageVars() error {
 		err := fmt.Errorf("BLACKBOX_EXPORTER_IMAGE environment variable not found")
 		r.Log.Error(err, "BLACKBOX_EXPORTER_IMAGE environment variable not set; will use default image")
 	}
+
+	// TODO(GA): VAULT_AGENT_IMAGE is not set by default in the CSV (dev preview).
+	// For GA, add a downstream vault image to the CSV env vars and relatedImages
+	// so that SSE-S3 with Vault Agent works out of the box.
+	r.images.VaultAgent = os.Getenv("VAULT_AGENT_IMAGE")
+	if r.images.VaultAgent == "" {
+		r.Log.Info("VAULT_AGENT_IMAGE environment variable not set; Vault Agent deployment for RGW SSE-S3 will not be available")
+	}
+
 	return nil
 }
 
@@ -87,6 +96,7 @@ type ImageMap struct {
 	OCSMetricsExporter string
 	BlackboxExporter   string
 	KubeRBACProxy      string
+	VaultAgent         string
 }
 
 // StorageClusterReconciler reconciles a StorageCluster object

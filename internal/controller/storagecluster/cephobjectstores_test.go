@@ -84,6 +84,101 @@ func assertCephObjectStores(t *testing.T, reconciler *StorageClusterReconciler, 
 	assert.Equal(t, expectedCos[0].Spec.Gateway.Instances, int32(2))
 }
 
+func TestCephObjectStoreSSES3WithVaultAgent(t *testing.T) {
+	platform.SetFakePlatformInstanceForTesting(true, configv1.BareMetalPlatformType)
+	defer platform.UnsetFakePlatformInstanceForTesting()
+
+	var objects []client.Object
+	t, reconciler, cr, _ := initStorageClusterResourceCreateUpdateTest(t, objects, nil)
+
+	t.Run("SSE-S3 is configured when VAULT_RGW_AUTH_METHOD is agent", func(t *testing.T) {
+		reconciler.images.VaultAgent = "vault-agent:test"
+		kmsConfigMap := &corev1.ConfigMap{
+			Data: map[string]string{
+				"KMS_PROVIDER":          "vault",
+				"VAULT_ADDR":            "https://vault.example.com:8200",
+				"VAULT_AUTH_METHOD":     "token",
+				"VAULT_RGW_AUTH_METHOD": "agent",
+			},
+		}
+		cephObjectStores, err := reconciler.newCephObjectStoreInstances(cr, kmsConfigMap)
+		assert.NoError(t, err)
+		assert.NotNil(t, cephObjectStores[0].Spec.Security)
+		s3 := cephObjectStores[0].Spec.Security.ServerSideEncryptionS3
+		assert.Equal(t, "vault", s3.ConnectionDetails["KMS_PROVIDER"])
+		// VAULT_ADDR should point to the ODF-managed Vault Agent service
+		assert.Equal(t, VaultAgentServiceURL(cr.Namespace), s3.ConnectionDetails["VAULT_ADDR"])
+		assert.Equal(t, "agent", s3.ConnectionDetails["VAULT_AUTH_METHOD"])
+		assert.Equal(t, "transit", s3.ConnectionDetails["VAULT_SECRET_ENGINE"])
+		assert.Empty(t, s3.TokenSecretName)
+	})
+
+	t.Run("SSE-S3 is skipped when VAULT_AGENT_IMAGE is empty", func(t *testing.T) {
+		reconciler.images.VaultAgent = ""
+		kmsConfigMap := &corev1.ConfigMap{
+			Data: map[string]string{
+				"KMS_PROVIDER":          "vault",
+				"VAULT_ADDR":            "https://vault.example.com:8200",
+				"VAULT_RGW_AUTH_METHOD": "agent",
+			},
+		}
+		cephObjectStores, err := reconciler.newCephObjectStoreInstances(cr, kmsConfigMap)
+		assert.NoError(t, err)
+		assert.Nil(t, cephObjectStores[0].Spec.Security)
+	})
+
+	t.Run("SSE-KMS is configured when VAULT_RGW_AUTH_METHOD is token", func(t *testing.T) {
+		kmsConfigMap := &corev1.ConfigMap{
+			Data: map[string]string{
+				"KMS_PROVIDER":          "vault",
+				"VAULT_ADDR":            "https://vault.example.com:8200",
+				"VAULT_RGW_AUTH_METHOD": "token",
+			},
+		}
+		cephObjectStores, err := reconciler.newCephObjectStoreInstances(cr, kmsConfigMap)
+		assert.NoError(t, err)
+		assert.NotNil(t, cephObjectStores[0].Spec.Security)
+		// SSE-KMS should be configured
+		kms := cephObjectStores[0].Spec.Security.KeyManagementService
+		assert.Equal(t, "https://vault.example.com:8200", kms.ConnectionDetails["VAULT_ADDR"])
+		assert.Equal(t, KMSTokenSecretName, kms.TokenSecretName)
+		// SSE-S3 should not be configured
+		assert.Empty(t, cephObjectStores[0].Spec.Security.ServerSideEncryptionS3.ConnectionDetails)
+	})
+
+	t.Run("No RGW encryption when VAULT_RGW_AUTH_METHOD is absent", func(t *testing.T) {
+		kmsConfigMap := &corev1.ConfigMap{
+			Data: map[string]string{
+				"KMS_PROVIDER": "vault",
+				"VAULT_ADDR":   "https://vault.example.com:8200",
+			},
+		}
+		cephObjectStores, err := reconciler.newCephObjectStoreInstances(cr, kmsConfigMap)
+		assert.NoError(t, err)
+		assert.Nil(t, cephObjectStores[0].Spec.Security)
+	})
+
+	t.Run("Error when VAULT_RGW_AUTH_METHOD is invalid", func(t *testing.T) {
+		kmsConfigMap := &corev1.ConfigMap{
+			Data: map[string]string{
+				"KMS_PROVIDER":          "vault",
+				"VAULT_ADDR":            "https://vault.example.com:8200",
+				"VAULT_RGW_AUTH_METHOD": "kubernetes",
+			},
+		}
+		_, err := reconciler.newCephObjectStoreInstances(cr, kmsConfigMap)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "kubernetes")
+	})
+
+	t.Run("No RGW encryption when KMS ConfigMap is nil", func(t *testing.T) {
+		cephObjectStores, err := reconciler.newCephObjectStoreInstances(cr, nil)
+		assert.NoError(t, err)
+		assert.Nil(t, cephObjectStores[0].Spec.Security)
+	})
+
+}
+
 func TestGetCephObjectStoreGatewayInstances(t *testing.T) {
 	var cases = []struct {
 		label                                   string

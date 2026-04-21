@@ -37,6 +37,26 @@ const (
 	ThalesKMSProvider = "kmip"
 	// AzureKSMProvider represents the Azure Key vault.
 	AzureKSMProvider = "azure-kv"
+	// VaultAgentAuthMethod is the key to represent vault agent based authentication
+	VaultAgentAuthMethod = "agent"
+	// VaultRGWAuthMethodKey is the key in the KMS ConfigMap to specify the auth method for RGW SSE-S3
+	VaultRGWAuthMethodKey = "VAULT_RGW_AUTH_METHOD"
+	// VaultRGWAgentAddrKey is the key in the KMS ConfigMap to specify the Vault Agent sidecar address for RGW SSE-S3
+	VaultRGWAgentAddrKey = "VAULT_RGW_AGENT_ADDR"
+	// VaultAgentDeploymentName is the name of the Vault Agent deployment managed by ODF
+	VaultAgentDeploymentName = "vault-agent-rgw"
+	// VaultAgentServiceName is the name of the Vault Agent service
+	VaultAgentServiceName = "vault-agent-rgw"
+	// VaultAgentSAName is the name of the Vault Agent service account
+	VaultAgentSAName = "vault-agent-rgw"
+	// VaultAgentConfigMapName is the name of the Vault Agent configuration ConfigMap
+	VaultAgentConfigMapName = "vault-agent-rgw-config"
+	// VaultAgentPort is the port the Vault Agent cache listener runs on
+	VaultAgentPort = 8100
+	// VaultRGWRoleKey is the key in the KMS ConfigMap to specify the Vault K8s auth role for RGW
+	VaultRGWRoleKey = "VAULT_RGW_ROLE"
+	// VaultRGWAuthMountPathKey is the key in the KMS ConfigMap to specify the Vault K8s auth mount path
+	VaultRGWAuthMountPathKey = "VAULT_RGW_AUTH_MOUNT_PATH"
 )
 
 var (

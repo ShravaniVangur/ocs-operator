@@ -244,13 +244,19 @@ func getMetricsExporterServiceMonitor(instance *ocsv1.StorageCluster) *monitorin
 					Port:            portMetricsMain,
 					Path:            metricsPath,
 					RelabelConfigs:  relabelConfigs,
-					Scheme:          "https",
-					TLSConfig: &monitoringv1.TLSConfig{
-						SafeTLSConfig: monitoringv1.SafeTLSConfig{
-							InsecureSkipVerify: ptr.To(false),
-							ServerName:         ptr.To(serverName),
+					Scheme:          ptr.To(monitoringv1.SchemeHTTPS),
+					HTTPConfigWithProxyAndTLSFiles: monitoringv1.HTTPConfigWithProxyAndTLSFiles{
+						HTTPConfigWithTLSFiles: monitoringv1.HTTPConfigWithTLSFiles{
+							TLSConfig: &monitoringv1.TLSConfig{
+								SafeTLSConfig: monitoringv1.SafeTLSConfig{
+									InsecureSkipVerify: ptr.To(false),
+									ServerName:         ptr.To(serverName),
+								},
+								TLSFilesConfig: monitoringv1.TLSFilesConfig{
+									CAFile: "/etc/prometheus/configmaps/serving-certs-ca-bundle/service-ca.crt",
+								},
+							},
 						},
-						CAFile: "/etc/prometheus/configmaps/serving-certs-ca-bundle/service-ca.crt",
 					},
 				},
 				{
@@ -259,13 +265,19 @@ func getMetricsExporterServiceMonitor(instance *ocsv1.StorageCluster) *monitorin
 					Port:            portMetricsSelf,
 					Path:            metricsPath,
 					RelabelConfigs:  relabelConfigs,
-					Scheme:          "https",
-					TLSConfig: &monitoringv1.TLSConfig{
-						SafeTLSConfig: monitoringv1.SafeTLSConfig{
-							InsecureSkipVerify: ptr.To(false),
-							ServerName:         ptr.To(serverName),
+					Scheme:          ptr.To(monitoringv1.SchemeHTTPS),
+					HTTPConfigWithProxyAndTLSFiles: monitoringv1.HTTPConfigWithProxyAndTLSFiles{
+						HTTPConfigWithTLSFiles: monitoringv1.HTTPConfigWithTLSFiles{
+							TLSConfig: &monitoringv1.TLSConfig{
+								SafeTLSConfig: monitoringv1.SafeTLSConfig{
+									InsecureSkipVerify: ptr.To(false),
+									ServerName:         ptr.To(serverName),
+								},
+								TLSFilesConfig: monitoringv1.TLSFilesConfig{
+									CAFile: "/etc/prometheus/configmaps/serving-certs-ca-bundle/service-ca.crt",
+								},
+							},
 						},
-						CAFile: "/etc/prometheus/configmaps/serving-certs-ca-bundle/service-ca.crt",
 					},
 				},
 			},
@@ -511,8 +523,8 @@ func createMetricsExporterServiceAccount(ctx context.Context, r *StorageClusterR
 		return nil
 	}
 	// If ServiceAccount exists but Labels and/or OwnerReferences are incorrect, we need to update it.
-currentServiceAccount.Labels = expectedServiceAccount.Labels
-		currentServiceAccount.OwnerReferences = expectedServiceAccount.OwnerReferences
+	currentServiceAccount.Labels = expectedServiceAccount.Labels
+	currentServiceAccount.OwnerReferences = expectedServiceAccount.OwnerReferences
 	err = r.Update(ctx, currentServiceAccount)
 	return err
 }

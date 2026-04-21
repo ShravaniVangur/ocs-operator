@@ -327,6 +327,7 @@ func (r *StorageClusterReconciler) deleteResources(sc *ocsv1.StorageCluster) (re
 		&ocsS3EndpointsConfig{},
 		&ocsCephObjectStoreUsers{},
 		&ocsCephObjectStores{},
+		&ocsVaultAgent{},
 		&ocsCephRbdMirrors{},
 		&ocsCephNFS{},
 		&ocsCephNFSService{},

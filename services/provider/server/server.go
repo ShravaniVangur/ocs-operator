@@ -845,17 +845,23 @@ func (s *OCSProviderServer) getOBCResourceVersions(ctx context.Context, logger l
 		obc := &obcList.Items[i]
 
 		ob, configMap, secret, err := s.getOBCRelatedResources(ctx, obc.Name, consumer)
-		if err != nil {
+		if client.IgnoreNotFound(err) != nil {
 			return nil, fmt.Errorf("failed to get OBC related resources for consumer %v. %v", consumer.UID, err)
 		}
 
 		resourceVersions = append(
 			resourceVersions,
 			stringPair{"obc", obc.ResourceVersion},
-			stringPair{"ob", ob.ResourceVersion},
-			stringPair{"configmap", configMap.ResourceVersion},
-			stringPair{"secret", secret.ResourceVersion},
 		)
+
+		if !kerrors.IsNotFound(err) {
+			resourceVersions = append(
+				resourceVersions,
+				stringPair{"ob", ob.ResourceVersion},
+				stringPair{"configmap", configMap.ResourceVersion},
+				stringPair{"secret", secret.ResourceVersion},
+			)
+		}
 	}
 
 	slices.SortFunc(resourceVersions, compareStringPair)
@@ -2309,8 +2315,26 @@ func (s *OCSProviderServer) appendOBCResources(
 		remoteOBCNamespace := obc.Labels[remoteObcNamespaceLabelKey]
 
 		ob, configMap, secret, err := s.getOBCRelatedResources(ctx, obc.Name, consumer)
-		if err != nil {
+		if client.IgnoreNotFound(err) != nil {
 			return nil, fmt.Errorf("failed to get OBC related resources for consumer %v. %v", consumer.UID, err)
+		}
+
+		obc.Name = remoteOBCName
+		obc.Namespace = remoteOBCNamespace
+		obc.Annotations = nil
+		obc.Labels = nil
+		statusSubResource := pb.SubResource_SUB_RESOURCE_STATUS
+
+		records = append(records,
+			kubeObjectWithOpRecord{
+				kubeObject:  obc,
+				clientOp:    pb.KubeClientOp_UPDATE_SUB_RESOURCE,
+				subResource: &statusSubResource,
+			},
+		)
+
+		if kerrors.IsNotFound(err) {
+			return records, nil
 		}
 
 		ob.Name = fmt.Sprintf("obc-%s-%s", remoteOBCNamespace, remoteOBCName)
@@ -2318,11 +2342,6 @@ func (s *OCSProviderServer) appendOBCResources(
 		configMap.Namespace = remoteOBCNamespace
 		secret.Name = remoteOBCName
 		secret.Namespace = remoteOBCNamespace
-		obc.Name = remoteOBCName
-		obc.Namespace = remoteOBCNamespace
-		obc.Annotations = nil
-		obc.Labels = nil
-		statusSubResource := pb.SubResource_SUB_RESOURCE_STATUS
 
 		records = append(records,
 			kubeObjectWithOpRecord{
@@ -2341,11 +2360,6 @@ func (s *OCSProviderServer) appendOBCResources(
 			kubeObjectWithOpRecord{
 				kubeObject: secret,
 				clientOp:   pb.KubeClientOp_CREATE_OR_UPDATE,
-			},
-			kubeObjectWithOpRecord{
-				kubeObject:  obc,
-				clientOp:    pb.KubeClientOp_UPDATE_SUB_RESOURCE,
-				subResource: &statusSubResource,
 			},
 		)
 	}
@@ -2366,7 +2380,7 @@ func (s *OCSProviderServer) getOBCRelatedResources(
 		client.ObjectKeyFromObject(ob),
 		ob,
 	); err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get OB for consumer. error is %v", err)
+		return nil, nil, nil, fmt.Errorf("failed to get OB for OBC %s: %w", obcName, err)
 	}
 
 	configMap := &corev1.ConfigMap{}
@@ -2377,7 +2391,7 @@ func (s *OCSProviderServer) getOBCRelatedResources(
 		client.ObjectKeyFromObject(configMap),
 		configMap,
 	); err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get ConfigMap for OBC %s. error is %v", obcName, err)
+		return nil, nil, nil, fmt.Errorf("failed to get ConfigMap for OBC %s: %w", obcName, err)
 	}
 
 	secret := &corev1.Secret{}
@@ -2388,7 +2402,7 @@ func (s *OCSProviderServer) getOBCRelatedResources(
 		client.ObjectKeyFromObject(secret),
 		secret,
 	); err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get Secret for OBC %s. error is %v", obcName, err)
+		return nil, nil, nil, fmt.Errorf("failed to get Secret for OBC %s: %w", obcName, err)
 	}
 
 	return ob, configMap, secret, nil

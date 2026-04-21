@@ -84,6 +84,16 @@ var (
 				"cpu":    resource.MustParse("100m"),
 			},
 		},
+		"vault-agent": {
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("50m"),
+				corev1.ResourceMemory: resource.MustParse("50Mi"),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100m"),
+				corev1.ResourceMemory: resource.MustParse("128Mi"),
+			},
+		},
 		"kube-rbac-proxy-main": {
 			Requests: corev1.ResourceList{
 				"memory": resource.MustParse("40Mi"),
@@ -391,6 +401,12 @@ var (
 			Requests: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("10m"),
 				corev1.ResourceMemory: resource.MustParse("75Mi"),
+			},
+		},
+		"vault-agent": {
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+				corev1.ResourceMemory: resource.MustParse("50Mi"),
 			},
 		},
 		"rook-ceph-tools": {

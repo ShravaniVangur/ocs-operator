@@ -234,37 +234,63 @@ func (r *StorageClusterReconciler) newCephObjectStoreInstances(initData *ocsv1.S
 		// Set default values in the metadata pool spec as necessary
 		setDefaultMetadataPoolSpec(&obj.Spec.MetadataPool, initData)
 
-		// if kmsConfig is not 'nil', add the KMS details to ObjectStore spec
+		// if kmsConfig is not 'nil', add encryption details to ObjectStore spec.
+		// SSE-KMS and SSE-S3 are mutually exclusive so configure one or the other.
 		if kmsConfigMap != nil {
-
-			// skip if KMS_PROVIDER is ibmkeyprotect or VAULT_AUTH_METHOD is kubernetes, not supported for RGW
-			if kmsConfigMap.Data["KMS_PROVIDER"] == IbmKeyProtectKMSProvider ||
-				kmsConfigMap.Data["KMS_PROVIDER"] == ThalesKMSProvider ||
-				kmsConfigMap.Data["VAULT_AUTH_METHOD"] == VaultSAAuthMethod {
-				r.Log.Info("IBMKeyProtect/Thales as KMS provider or Vault authentication via Service Account is unsupported configuration for RGW KMS, hence skipping")
+			// IBMKeyProtect and Thales are unsupported KMS providers for RGW, skip entirely
+			if kmsConfigMap.Data[KMSProviderKey] == IbmKeyProtectKMSProvider ||
+				kmsConfigMap.Data[KMSProviderKey] == ThalesKMSProvider {
+				r.Log.Info("IBMKeyProtect/Thales as KMS provider is unsupported for RGW, skipping")
 				continue
 			}
-			// Set default KMS_PROVIDER and VAULT_SECRET_ENGINE values, refer https://issues.redhat.com/browse/RHSTOR-1963
-			if _, ok := kmsConfigMap.Data["KMS_PROVIDER"]; !ok {
-				kmsConfigMap.Data["KMS_PROVIDER"] = VaultKMSProvider
+
+			// Set default KMS_PROVIDER, refer https://issues.redhat.com/browse/RHSTOR-1963
+			if _, ok := kmsConfigMap.Data[KMSProviderKey]; !ok {
+				kmsConfigMap.Data[KMSProviderKey] = VaultKMSProvider
 			}
-			rgwConnDetails := make(map[string]string)
-			for key, value := range kmsConfigMap.Data {
-				// ignore kv engine related options
-				if key == "VAULT_BACKEND_PATH" || key == "VAULT_BACKEND" {
+
+			switch kmsConfigMap.Data[VaultRGWAuthMethodKey] {
+			case "":
+				// VAULT_RGW_AUTH_METHOD not set, skip RGW encryption
+				r.Log.Info("VAULT_RGW_AUTH_METHOD not set, skipping RGW encryption configuration")
+			case VaultAgentAuthMethod:
+				if r.images.VaultAgent == "" {
+					r.Log.Info("VAULT_AGENT_IMAGE not set, skipping SSE-S3 Vault Agent configuration for RGW")
 					continue
 				}
-				rgwConnDetails[key] = value
-			}
-			// overwrite SecretEngine value to transit
-			rgwConnDetails["VAULT_SECRET_ENGINE"] = "transit"
-			obj.Spec.Security = &cephv1.ObjectStoreSecuritySpec{
-				SecuritySpec: cephv1.SecuritySpec{
-					KeyManagementService: cephv1.KeyManagementServiceSpec{
-						ConnectionDetails: rgwConnDetails,
-						TokenSecretName:   KMSTokenSecretName,
+				// Configure SSE-S3 with Vault Agent auth.
+				// RGW connects to the ODF-managed Vault Agent service instead of directly to Vault.
+				obj.Spec.Security = &cephv1.ObjectStoreSecuritySpec{
+					ServerSideEncryptionS3: cephv1.KeyManagementServiceSpec{
+						ConnectionDetails: map[string]string{
+							"KMS_PROVIDER":        VaultKMSProvider,
+							"VAULT_ADDR":          VaultAgentServiceURL(initData.Namespace),
+							"VAULT_AUTH_METHOD":   VaultAgentAuthMethod,
+							"VAULT_SECRET_ENGINE": "transit",
+						},
 					},
-				},
+				}
+			case VaultTokenAuthMethod:
+				// Configure SSE-KMS with token auth
+				rgwConnDetails := make(map[string]string)
+				for key, value := range kmsConfigMap.Data {
+					if key == "VAULT_BACKEND_PATH" || key == "VAULT_BACKEND" {
+						continue
+					}
+					rgwConnDetails[key] = value
+				}
+				rgwConnDetails["VAULT_SECRET_ENGINE"] = "transit"
+				obj.Spec.Security = &cephv1.ObjectStoreSecuritySpec{
+					SecuritySpec: cephv1.SecuritySpec{
+						KeyManagementService: cephv1.KeyManagementServiceSpec{
+							ConnectionDetails: rgwConnDetails,
+							TokenSecretName:   KMSTokenSecretName,
+						},
+					},
+				}
+			default:
+				return nil, fmt.Errorf("unsupported %s value %q, must be %q or %q",
+					VaultRGWAuthMethodKey, kmsConfigMap.Data[VaultRGWAuthMethodKey], VaultAgentAuthMethod, VaultTokenAuthMethod)
 			}
 		}
 
