@@ -42,6 +42,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -103,6 +104,26 @@ func (r *MirroringReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		},
 	)
 
+	placementChangePredicate := predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldSC, oldOk := e.ObjectOld.(*ocsv1.StorageCluster)
+			newSC, newOk := e.ObjectNew.(*ocsv1.StorageCluster)
+			if !oldOk || !newOk {
+				return false
+			}
+			// Trigger reconcile only if Spec.Placement changed
+			return !reflect.DeepEqual(oldSC.Spec.Placement, newSC.Spec.Placement)
+		},
+		CreateFunc: func(e event.CreateEvent) bool {
+			return false
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return false
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return false
+		},
+	}
 	generationChangePredicate := builder.WithPredicates(predicate.GenerationChangedPredicate{})
 
 	return ctrl.NewControllerManagedBy(mgr).
@@ -139,6 +160,11 @@ func (r *MirroringReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			&rookCephv1.CephBlockPoolRadosNamespace{},
 			enqueueConfigMapRequest,
 			generationChangePredicate,
+		).
+		Watches(
+			&ocsv1.StorageCluster{},
+			enqueueConfigMapRequest,
+			builder.WithPredicates(placementChangePredicate),
 		).
 		Complete(r)
 }
