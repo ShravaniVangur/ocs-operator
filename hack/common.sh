@@ -44,7 +44,7 @@ METRICS_EXPORTER_FULL_IMAGE_NAME="${METRICS_EXPORTER_FULL_IMAGE_NAME:=${IMAGE_RE
 BUNDLE_FULL_IMAGE_NAME="${BUNDLE_FULL_IMAGE_NAME:=${IMAGE_REGISTRY}/${REGISTRY_NAMESPACE}/${OPERATOR_BUNDLE_IMAGE_NAME}:${IMAGE_TAG}}"
 
 # Bundle images of Dependencies of OCS Operator
-NOOBAA_BUNDLE_FULL_IMAGE_NAME="quay.io/noobaa/noobaa-operator-bundle:master-20250730"
+NOOBAA_BUNDLE_FULL_IMAGE_NAME="quay.io/noobaa/noobaa-operator-bundle:master-20260420"
 ROOK_BUNDLE_FULL_IMAGE_NAME="quay.io/ocs-dev/rook-ceph-operator-bundle:master-76dd3bdbe"
 OCS_CLIENT_BUNDLE_FULL_IMAGE_NAME="quay.io/ocs-dev/ocs-client-operator-bundle:main-dd10c95"
 OCS_TLS_PROFILE_BUNDLE_FULL_IMAGE_NAME="quay.io/ocs-dev/ocs-tls-profiles-bundle:main-9fd1952"
