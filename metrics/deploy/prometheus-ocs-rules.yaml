@@ -25,9 +25,9 @@ spec:
           "subvolume", "$1", "subvolume_path", ".*/([^/]+)$"
         )
         * on(subvolume) group_left(
-            pv_name,          
-            pvc_namespace,         
-            fs_name,
+            pv_name,
+            pvc_namespace,
+            fs_name
           )
         label_replace(
           label_replace(
@@ -49,9 +49,9 @@ spec:
           "subvolume", "$1", "subvolume_path", ".*/([^/]+)$"
         )
         * on(subvolume) group_left(
-            pv_name,          
-            pvc_namespace,         
-            fs_name,
+            pv_name,
+            pvc_namespace,
+            fs_name
           )
         label_replace(
           label_replace(
@@ -73,9 +73,9 @@ spec:
           "subvolume", "$1", "subvolume_path", ".*/([^/]+)$"
         )
         * on(subvolume) group_left(
-            pv_name,          
-            pvc_namespace,         
-            fs_name,
+            pv_name,
+            pvc_namespace,
+            fs_name
           )
         label_replace(
           label_replace(
@@ -97,9 +97,9 @@ spec:
           "subvolume", "$1", "subvolume_path", ".*/([^/]+)$"
         )
         * on(subvolume) group_left(
-            pv_name,          
-            pvc_namespace,         
-            fs_name,
+            pv_name,
+            pvc_namespace,
+            fs_name
           )
         label_replace(
           label_replace(
@@ -121,9 +121,9 @@ spec:
           "subvolume", "$1", "subvolume_path", ".*/([^/]+)$"
         )
         * on(subvolume) group_left(
-            pv_name,          
-            pvc_namespace,         
-            fs_name,
+            pv_name,
+            pvc_namespace,
+            fs_name
           )
         label_replace(
           label_replace(
@@ -145,9 +145,9 @@ spec:
           "subvolume", "$1", "subvolume_path", ".*/([^/]+)$"
         )
         * on(subvolume) group_left(
-            pv_name,          
-            pvc_namespace,         
-            fs_name,
+            pv_name,
+            pvc_namespace,
+            fs_name
           )
         label_replace(
           label_replace(
