@@ -26,6 +26,8 @@ import (
 	ocsv1alpha1 "github.com/red-hat-storage/ocs-operator/api/v4/v1alpha1"
 	providerClient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
 	"github.com/red-hat-storage/ocs-operator/v4/controllers/util"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/go-logr/logr"
 	rookCephv1 "github.com/rook/rook/pkg/apis/ceph.rook.io/v1"
@@ -231,6 +233,10 @@ func (r *MirroringReconciler) reconcilePhases(clientMappingConfig *corev1.Config
 		errorOccurred = true
 	}
 
+	if errored := r.reconcileRotatePeerMirroringKey(ocsClient, storageClusterPeer); errored {
+		errorOccurred = true
+	}
+
 	if errored := r.reconcileBlockPoolMirroring(
 		ocsClient,
 		clientMappingConfig,
@@ -327,6 +333,30 @@ func (r *MirroringReconciler) reconcileRbdMirror(clientMappingConfig *corev1.Con
 		}
 	}
 
+	return false
+}
+
+func (r *MirroringReconciler) reconcileRotatePeerMirroringKey(
+	ocsClient *providerClient.OCSProviderClient,
+	storageClusterPeer *ocsv1.StorageClusterPeer,
+) bool {
+	desiredKeyGeneration, err := strconv.Atoi(util.MustGetEnv(util.DesiredCephxKeyGenEnvVarName))
+	if err != nil {
+		r.log.Error(err, "failed to parse desiredCephxKeyGenEnvVarName")
+		return true
+	}
+
+	if ocsClient != nil {
+		_, err := ocsClient.RotateMirroringKey(r.ctx, storageClusterPeer.Status.PeerInfo.StorageClusterUid, int64(desiredKeyGeneration))
+		if err != nil {
+			if status.Code(err) == codes.Unimplemented {
+				r.log.Info("RotateMirroringKey is not implemented on the peer, skipping")
+				return false
+			}
+			r.log.Error(err, "failed to rotate mirroring key")
+			return true
+		}
+	}
 	return false
 }
 

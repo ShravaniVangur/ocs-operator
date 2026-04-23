@@ -1136,7 +1136,7 @@ func createFakeStorageClusterReconciler(t *testing.T, obj ...runtime.Object) Sto
 
 	os.Setenv(providerAPIServerImage, "fake-image")
 	os.Setenv(onboardingValidationKeysGeneratorImage, "fake-image")
-	t.Setenv(desiredCephxKeyGenEnvVarName, "2")
+	t.Setenv(statusutil.DesiredCephxKeyGenEnvVarName, "2")
 
 	ocsProviderServiceDeployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: ocsProviderServerName, Namespace: namespace},
