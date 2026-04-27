@@ -29,7 +29,9 @@ const (
 	MonitoringNamespace = "openshift-monitoring"
 )
 
-type ocsNoobaaSystem struct{}
+type ocsNoobaaSystem struct {
+	tlsProfile *ocstlsv1.TLSProfile
+}
 
 func (obj *ocsNoobaaSystem) ensureCreated(r *StorageClusterReconciler, sc *ocsv1.StorageCluster) (reconcile.Result, error) {
 	// skip noobaa reconcile if it is not requested from same namespace as operator
@@ -97,7 +99,7 @@ func (obj *ocsNoobaaSystem) ensureCreated(r *StorageClusterReconciler, sc *ocsv1
 
 	// Reconcile the noobaa state, creating or updating if needed
 	_, err = controllerutil.CreateOrUpdate(context.TODO(), r.Client, nb, func() error {
-		return r.setNooBaaDesiredState(nb, sc)
+		return r.setNooBaaDesiredState(nb, sc, obj.tlsProfile)
 	})
 	if err != nil {
 		r.Log.Error(err, "Failed to create or update NooBaa system.", "Noobaa", klog.KRef(nb.Namespace, nb.Name))
@@ -132,7 +134,7 @@ func getNooBaaMonitoringLabels(sc ocsv1.StorageCluster) map[string]string {
 	return labels
 }
 
-func (r *StorageClusterReconciler) setNooBaaDesiredState(nb *nbv1.NooBaa, sc *ocsv1.StorageCluster) error {
+func (r *StorageClusterReconciler) setNooBaaDesiredState(nb *nbv1.NooBaa, sc *ocsv1.StorageCluster, tlsProfile *ocstlsv1.TLSProfile) error {
 	coreResources := getDaemonResources("noobaa-core", sc)
 	dbResources := getDaemonResources("noobaa-db", sc)
 	dBVolumeResources := getDaemonResources("noobaa-db-vol", sc)
@@ -277,21 +279,16 @@ func (r *StorageClusterReconciler) setNooBaaDesiredState(nb *nbv1.NooBaa, sc *oc
 	nb.Spec.Security.KeyManagementService.EnableKeyRotation = isEnabled
 	nb.Spec.Security.KeyManagementService.Schedule = rotationSchedule
 
-	tlsProfile := &ocstlsv1.TLSProfile{}
-	tlsProfile.Name = defaults.TLSProfileName
-	tlsProfile.Namespace = r.OperatorNamespace
-	if err := r.Get(r.ctx, client.ObjectKeyFromObject(tlsProfile), tlsProfile); client.IgnoreNotFound(err) != nil {
-		return err
-	} else if tlsProfile.UID == "" {
+	if tlsProfile == nil {
 		nb.Spec.Security.APIServerSecurity = nil
 		return nil
 	}
 	if cfg, found := ocstlsv1.GetConfigForServer(tlsProfile, "noobaa.io", ""); found {
-		gotls, err := ocstlsv1.ValidateAndGetGoTLSConfig(cfg)
-		if err != nil {
+		if err := ocstlsv1.ValidateTLSConfig(cfg); err != nil {
 			return err
 		}
 
+		gotls := ocstlsv1.GetGoTLSConfig(cfg)
 		apiSecurity := cmp.Or(nb.Spec.Security.APIServerSecurity, &nbv1.TLSSecuritySpec{})
 		switch gotls.MinVersion {
 		case tls.VersionTLS12:

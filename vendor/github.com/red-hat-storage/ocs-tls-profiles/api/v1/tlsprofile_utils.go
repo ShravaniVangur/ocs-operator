@@ -243,17 +243,36 @@ func GetConfigForServer(tlsProfile *TLSProfile, domain, server string) (*TLSConf
 	return matchedConfig, storedSpecificity >= 0
 }
 
-// ValidateAndGetGoTLSConfig validates that ciphers and groups are compatible with the specified TLS version.
+// ValidateTLSConfig validates that ciphers and groups are compatible with the specified TLS version.
 // CRD-level enum markers ensure cipher/group names and protocol version are valid;
-// this validates cross-field compatibility only and return crypto/tls config.
+// this validates cross-field compatibility only.
 //
 // TLS 1.2: only TLS 1.2 ciphers and classical groups are permitted.
 // TLS 1.3: only TLS 1.3 ciphers and classical or hybrid groups are permitted.
-func ValidateAndGetGoTLSConfig(src *TLSConfig) (*tls.Config, error) {
+func ValidateTLSConfig(src *TLSConfig) error {
 	if src == nil {
-		return nil, fmt.Errorf("nil config supplied")
+		return fmt.Errorf("nil config supplied")
 	}
 
+	for _, cipher := range src.Ciphers {
+		if _, ok := cipherToGoID(src.Version, cipher); !ok {
+			return fmt.Errorf("cipher %q is not valid for %s", cipher, src.Version)
+		}
+	}
+
+	for _, group := range src.Groups {
+		if _, ok := groupToGoID(src.Version, group); !ok {
+			return fmt.Errorf("group %q is not valid for %s", group, src.Version)
+		}
+	}
+
+	return nil
+}
+
+// GetGoTLSConfig converts a validated TLSConfig to a Go crypto/tls Config.
+// Call ValidateTLSConfig before this to ensure src is valid.
+// Version is exact, not a range: both MinVersion and MaxVersion are set to the same value.
+func GetGoTLSConfig(src *TLSConfig) *tls.Config {
 	cfg := &tls.Config{}
 	if v, ok := versionToGoID(src.Version); ok {
 		cfg.MinVersion = v
@@ -263,20 +282,16 @@ func ValidateAndGetGoTLSConfig(src *TLSConfig) (*tls.Config, error) {
 	for _, cipher := range src.Ciphers {
 		if id, ok := cipherToGoID(src.Version, cipher); ok {
 			cfg.CipherSuites = append(cfg.CipherSuites, id)
-		} else {
-			return nil, fmt.Errorf("cipher %q is not valid for %s", cipher, src.Version)
 		}
 	}
 
 	for _, group := range src.Groups {
 		if id, ok := groupToGoID(src.Version, group); ok {
 			cfg.CurvePreferences = append(cfg.CurvePreferences, id)
-		} else {
-			return nil, fmt.Errorf("group %q is not valid for %s", group, src.Version)
 		}
 	}
 
-	return cfg, nil
+	return cfg
 }
 
 // OpenSSLConfig holds translated OpenSSL TLS values.

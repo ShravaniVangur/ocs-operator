@@ -334,7 +334,14 @@ func (r *StorageClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&ocsclientv1a1.StorageClient{}, enqueueStorageClusterRequest).
 		// Watch Nodes with OCS label to trigger Blackbox Probe updates
 		Watches(&corev1.Node{}, enqueueStorageClusterRequest, builder.WithPredicates(ocsNodeLabelPredicate)).
-		Watches(&ocstlsv1.TLSProfile{}, enqueueStorageClusterRequest, builder.WithPredicates(predicate.GenerationChangedPredicate{}))
+		Watches(
+			&ocstlsv1.TLSProfile{},
+			enqueueStorageClusterRequest,
+			builder.WithPredicates(
+				util.NamePredicate(defaults.TLSProfileName),
+				predicate.GenerationChangedPredicate{},
+			),
+		)
 
 	if os.Getenv("SKIP_NOOBAA_CRD_WATCH") != "true" {
 		build.Owns(&nbv1.NooBaa{}, builder.WithPredicates(noobaaIgnoreTimeUpdatePredicate))

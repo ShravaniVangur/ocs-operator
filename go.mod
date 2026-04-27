@@ -38,7 +38,7 @@ require (
 	github.com/red-hat-storage/ocs-client-operator/api v0.0.0-20260416061305-2878a3b403e6
 	github.com/red-hat-storage/ocs-operator/api/v4 v4.0.0-00010101000000-000000000000
 	github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-00010101000000-000000000000
-	github.com/red-hat-storage/ocs-tls-profiles/api v0.0.0-20260420133914-9fd1952d40a3
+	github.com/red-hat-storage/ocs-tls-profiles/api v0.0.0-20260427105901-0c5f6d8fcd65
 	github.com/rook/rook/pkg/apis v0.0.0-20260415231403-e74fed5b28f1
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/multierr v1.11.0

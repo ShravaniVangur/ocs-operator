@@ -10,6 +10,7 @@ import (
 
 	ocsv1 "github.com/red-hat-storage/ocs-operator/api/v4/v1"
 	ocsv1alpha1 "github.com/red-hat-storage/ocs-operator/api/v4/v1alpha1"
+	"github.com/red-hat-storage/ocs-operator/v4/pkg/defaults"
 	"github.com/red-hat-storage/ocs-operator/v4/pkg/util"
 	"github.com/red-hat-storage/ocs-operator/v4/version"
 
@@ -20,6 +21,7 @@ import (
 	conditionsv1 "github.com/openshift/custom-resource-status/conditions/v1"
 	"github.com/operator-framework/operator-lib/conditions"
 	odfgsapiv1b1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
+	ocstlsv1 "github.com/red-hat-storage/ocs-tls-profiles/api/v1"
 	corev1 "k8s.io/api/core/v1"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -172,8 +174,15 @@ func (r *StorageClusterReconciler) Reconcile(ctx context.Context, request reconc
 	}
 	r.IsMultipleStorageClusters = len(r.clusters.GetStorageClusters()) > 1
 
+	tlsProfile := &ocstlsv1.TLSProfile{}
+	tlsProfile.Name = defaults.TLSProfileName
+	tlsProfile.Namespace = r.OperatorNamespace
+	if err := r.Get(r.ctx, client.ObjectKeyFromObject(tlsProfile), tlsProfile); client.IgnoreNotFound(err) != nil {
+		return reconcile.Result{}, err
+	}
+
 	// Reconcile changes to the cluster
-	result, reconcileError := r.reconcilePhases(ctx, sc)
+	result, reconcileError := r.reconcilePhases(ctx, sc, tlsProfile)
 
 	// Ensure that cephtoolbox is deployed as instructed by the user
 	err = r.ensureToolsDeployment(sc)
@@ -351,7 +360,9 @@ func (r *StorageClusterReconciler) reconcileCrdWatches(obj client.Object, crdNam
 
 func (r *StorageClusterReconciler) reconcilePhases(
 	ctx context.Context,
-	instance *ocsv1.StorageCluster) (reconcile.Result, error) {
+	instance *ocsv1.StorageCluster,
+	tlsProfile *ocstlsv1.TLSProfile,
+) (reconcile.Result, error) {
 
 	if err := r.reconcileDynamicWatches(); err != nil {
 		return reconcile.Result{}, err
@@ -518,7 +529,7 @@ func (r *StorageClusterReconciler) reconcilePhases(
 				&ocsCephRGWRoutes{},
 				&ocsConsoleConfiguration{},
 				&obcStorageClasses{},
-				&ocsNoobaaSystem{},
+				&ocsNoobaaSystem{tlsProfile},
 				&ocsJobTemplates{},
 				&ocsCephRbdMirrors{},
 				&odfInfoConfig{},
@@ -527,7 +538,7 @@ func (r *StorageClusterReconciler) reconcilePhases(
 		} else {
 			// noobaa-only ensure functions
 			objs = []resourceManager{
-				&ocsNoobaaSystem{},
+				&ocsNoobaaSystem{tlsProfile},
 			}
 		}
 
@@ -543,7 +554,7 @@ func (r *StorageClusterReconciler) reconcilePhases(
 			// &ocsGroupSnapshotClass{},
 			&ocsOdfGroupSnapshotClass{},
 			&ocsNetworkFenceClass{},
-			&ocsNoobaaSystem{},
+			&ocsNoobaaSystem{tlsProfile},
 			&odfInfoConfig{},
 		}
 	}
