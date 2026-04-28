@@ -46,6 +46,7 @@ import (
 	ocsclientv1a1 "github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	ocsv1 "github.com/red-hat-storage/ocs-operator/api/v4/v1"
 	ocsv1alpha1 "github.com/red-hat-storage/ocs-operator/api/v4/v1alpha1"
+	ocstlsv1 "github.com/red-hat-storage/ocs-tls-profiles/api/v1"
 	cephv1 "github.com/rook/rook/pkg/apis/ceph.rook.io/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -116,6 +117,7 @@ func init() {
 	utilruntime.Must(nadscheme.AddToScheme(scheme))
 	utilruntime.Must(ocsclientv1a1.AddToScheme(scheme))
 	utilruntime.Must(csiaddonsv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(ocstlsv1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 

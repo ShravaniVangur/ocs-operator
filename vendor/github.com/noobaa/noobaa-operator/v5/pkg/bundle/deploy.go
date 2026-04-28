@@ -1,8 +1,8 @@
 package bundle
 
-const Version = "5.21.0"
+const Version = "5.22.0"
 
-const Sha256_deploy_cluster_role_yaml = "31fc622ff7fa66617be3895bddcb6cfdb97883b75b20bdb2bf04052bd14221a8"
+const Sha256_deploy_cluster_role_yaml = "6417dcd3e52c38e04ba6b70b7e22985f0f7ddf1edec96287fcc0cb5f42b30c04"
 
 const File_deploy_cluster_role_yaml = `apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -197,6 +197,21 @@ rules:
       - get
       - list
       - watch
+  - apiGroups:
+      - monitoring.coreos.com
+    resources:
+      - alertmanagers
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - monitoring.coreos.com
+    resources:
+      - alertmanagers/api
+    verbs:
+      - get
+      - create
+      - update
 `
 
 const Sha256_deploy_cluster_role_binding_yaml = "15c78355aefdceaf577bd96b4ae949ae424a3febdc8853be0917cf89a63941fc"
@@ -283,7 +298,7 @@ spec:
 
 `
 
-const Sha256_deploy_crds_noobaa_io_backingstores_yaml = "1b202cb74ba1bd0e54627bb55e14feea349c2f3d1604776ccaa040c37a932bef"
+const Sha256_deploy_crds_noobaa_io_backingstores_yaml = "e6b5ca2577838c95674c0e36b673bde5816c8bf80d7edb240da7e6918cb346ab"
 
 const File_deploy_crds_noobaa_io_backingstores_yaml = `---
 apiVersion: apiextensions.k8s.io/v1
@@ -374,6 +389,14 @@ spec:
               azureBlob:
                 description: AzureBlob specifies a backing store of type azure-blob
                 properties:
+                  clientId:
+                    description: Azure STS managed identity client id allows to get
+                      access token using NewWorkloadIdentityCredential
+                    type: string
+                  resourcegroupId:
+                    description: Azure storage account is created under this resource
+                      group
+                    type: string
                   secret:
                     description: |-
                       Secret refers to a secret that provides the credentials
@@ -389,12 +412,19 @@ spec:
                         type: string
                     type: object
                     x-kubernetes-map-type: atomic
+                  subscriptionId:
+                    description: Azure SubscriptionId is used to create storage account
+                      client.
+                    type: string
                   targetBlobContainer:
                     description: TargetBlobContainer is the name of the target Azure
                       Blob container
                     type: string
+                  tenantId:
+                    description: Azure STS managed identity TenantId id allows to
+                      get access token using NewWorkloadIdentityCredential
+                    type: string
                 required:
-                - secret
                 - targetBlobContainer
                 type: object
               googleCloudStorage:
@@ -462,6 +492,10 @@ spec:
                   numVolumes:
                     description: NumVolumes is the number of volumes to allocate
                     type: integer
+                  priorityClassName:
+                    description: PriorityClassName (optional) overrides the priority
+                      class for the pv-pool agent pods
+                    type: string
                   resources:
                     description: VolumeResources represents the minimum resources
                       each volume should have.
@@ -654,7 +688,7 @@ spec:
       status: {}
 `
 
-const Sha256_deploy_crds_noobaa_io_bucketclasses_yaml = "4397dc7ad11b72bc50f3744b5f9f66f22e76bc09ae2358dcf21c3aa376318d44"
+const Sha256_deploy_crds_noobaa_io_bucketclasses_yaml = "99a680e6d2ad4b391758007186f24761f034b001bea6a976ae799588df3b1033"
 
 const File_deploy_crds_noobaa_io_bucketclasses_yaml = `---
 apiVersion: apiextensions.k8s.io/v1
@@ -684,6 +718,10 @@ spec:
     - description: Quota
       jsonPath: .spec.quota
       name: Quota
+      type: string
+    - description: VectorPolicy
+      jsonPath: .spec.vectorPolicy
+      name: VectorPolicy
       type: string
     - description: Phase
       jsonPath: .status.phase
@@ -815,6 +853,20 @@ spec:
                 description: ReplicationPolicy specifies a json of replication rules
                   for the bucketclass
                 type: string
+              vectorPolicy:
+                description: VectorPolicy specifies the vector policy for the bucket
+                  class
+                properties:
+                  resource:
+                    description: Resource is the namespace store name to use (NSFS
+                      type only)
+                    type: string
+                  vectorDBType:
+                    description: VectorDBType is the type of vector database to use
+                    enum:
+                    - lance
+                    type: string
+                type: object
             type: object
           status:
             description: Most recently observed status of the noobaa BackingStore.
@@ -911,7 +963,7 @@ spec:
       status: {}
 `
 
-const Sha256_deploy_crds_noobaa_io_namespacestores_yaml = "dc1da64540920101bfb80e331920a3bc2b0b39ea27aacf148109b3fd91ed134e"
+const Sha256_deploy_crds_noobaa_io_namespacestores_yaml = "3918d4e2b31648e242af9bb3ee522b792083d6b942279d305fbcf18a9cc72dfa"
 
 const File_deploy_crds_noobaa_io_namespacestores_yaml = `---
 apiVersion: apiextensions.k8s.io/v1
@@ -1005,6 +1057,14 @@ spec:
               azureBlob:
                 description: AzureBlob specifies a namespace store of type azure-blob
                 properties:
+                  clientId:
+                    description: Azure STS managed identity client id allows to get
+                      access token using NewWorkloadIdentityCredential
+                    type: string
+                  resourcegroupId:
+                    description: Azure storage account is created under this resource
+                      group
+                    type: string
                   secret:
                     description: |-
                       Secret refers to a secret that provides the credentials
@@ -1020,12 +1080,19 @@ spec:
                         type: string
                     type: object
                     x-kubernetes-map-type: atomic
+                  subscriptionId:
+                    description: Azure SubscriptionId is used to create storage account
+                      client.
+                    type: string
                   targetBlobContainer:
                     description: TargetBlobContainer is the name of the target Azure
                       Blob container
                     type: string
+                  tenantId:
+                    description: Azure STS managed identity TenantId id allows to
+                      get access token using NewWorkloadIdentityCredential
+                    type: string
                 required:
-                - secret
                 - targetBlobContainer
                 type: object
               googleCloudStorage:
@@ -1425,7 +1492,7 @@ spec:
       status: {}
 `
 
-const Sha256_deploy_crds_noobaa_io_noobaas_yaml = "6cdd4f5aaa21ba8c450c5e00d6f8c38f43357b4dc2c22f786dedeaebf3c69618"
+const Sha256_deploy_crds_noobaa_io_noobaas_yaml = "2036917b6e311569f1026eb39d3862d096d7a674dc97553a7f962f0172f40784"
 
 const File_deploy_crds_noobaa_io_noobaas_yaml = `---
 apiVersion: apiextensions.k8s.io/v1
@@ -1457,6 +1524,10 @@ spec:
     - description: IAM Endpoints
       jsonPath: .status.services.serviceIam.nodePorts
       name: Iam-Endpoints
+      type: string
+    - description: Vectors Endpoints
+      jsonPath: .status.services.serviceVectors.nodePorts
+      name: Vectors-Endpoints
       type: string
     - description: Syslog Endpoints
       jsonPath: .status.services.serviceSyslog.nodePorts
@@ -2505,6 +2576,10 @@ spec:
                       cleanup confirmation
                     type: string
                 type: object
+              corePriorityClassName:
+                description: CorePriorityClassName (optional) overrides the priority
+                  class for the core pod
+                type: string
               coreResources:
                 description: CoreResources (optional) overrides the default resource
                   requirements for the server container
@@ -2572,6 +2647,10 @@ spec:
               dbImage:
                 description: DBImage (optional) overrides the default image for the
                   db container
+                type: string
+              dbPriorityClassName:
+                description: DBPriorityClassName (optional) overrides the priority
+                  class for the db pod
                 type: string
               dbResources:
                 description: DBResources (optional) overrides the default resource
@@ -2868,6 +2947,14 @@ spec:
                   azureBlob:
                     description: AzureBlob specifies a backing store of type azure-blob
                     properties:
+                      clientId:
+                        description: Azure STS managed identity client id allows to
+                          get access token using NewWorkloadIdentityCredential
+                        type: string
+                      resourcegroupId:
+                        description: Azure storage account is created under this resource
+                          group
+                        type: string
                       secret:
                         description: |-
                           Secret refers to a secret that provides the credentials
@@ -2883,12 +2970,19 @@ spec:
                             type: string
                         type: object
                         x-kubernetes-map-type: atomic
+                      subscriptionId:
+                        description: Azure SubscriptionId is used to create storage
+                          account client.
+                        type: string
                       targetBlobContainer:
                         description: TargetBlobContainer is the name of the target
                           Azure Blob container
                         type: string
+                      tenantId:
+                        description: Azure STS managed identity TenantId id allows
+                          to get access token using NewWorkloadIdentityCredential
+                        type: string
                     required:
-                    - secret
                     - targetBlobContainer
                     type: object
                   googleCloudStorage:
@@ -2958,6 +3052,10 @@ spec:
                       numVolumes:
                         description: NumVolumes is the number of volumes to allocate
                         type: integer
+                      priorityClassName:
+                        description: PriorityClassName (optional) overrides the priority
+                          class for the pv-pool agent pods
+                        type: string
                       resources:
                         description: VolumeResources represents the minimum resources
                           each volume should have.
@@ -3062,6 +3160,10 @@ spec:
                   of openshift route resources in the cluster
                 nullable: true
                 type: boolean
+              endpointPriorityClassName:
+                description: EndpointPriorityClassName (optional) overrides the priority
+                  class for the endpoint pods
+                type: string
               endpoints:
                 description: |-
                   Endpoints (optional) sets configuration info for the noobaa endpoint
@@ -3254,6 +3356,12 @@ spec:
                     items:
                       type: string
                     type: array
+                  vectors:
+                    description: Vectors is a list of subnets that will be allowed
+                      to access the Noobaa Vectors service
+                    items:
+                      type: string
+                    type: array
                 type: object
               logResources:
                 description: LogResources (optional) overrides the default resource
@@ -3338,6 +3446,36 @@ spec:
               security:
                 description: Security represents security settings
                 properties:
+                  apiServerSecurity:
+                    description: |-
+                      APIServerSecurity specifies the TLS configuration derived from the
+                      OpenShift API Server TLS profile. The StorageCluster propagates the
+                      platform TLS profile here and NooBaa applies it to endpoint HTTPS servers.
+                    properties:
+                      tlsCiphers:
+                        description: |-
+                          TLSCiphers is used to specify the cipher algorithms that are negotiated
+                          during the TLS handshake.
+                        items:
+                          type: string
+                        type: array
+                      tlsGroups:
+                        description: |-
+                          TLSGroups is used to specify the key exchange groups for the TLS
+                          handshake.
+                        items:
+                          description: |-
+                            TLSGroup represents a supported TLS key exchange group.
+                            Follows the openshift storage API TLSGroup definition. see https://github.com/red-hat-storage/ocs-tls-profiles
+                          type: string
+                        type: array
+                      tlsMinVersion:
+                        description: |-
+                          TLSMinVersion is used to specify the minimal version of the TLS protocol
+                          that is negotiated during the TLS handshake.
+                        nullable: true
+                        type: string
+                    type: object
                   kms:
                     description: KeyManagementServiceSpec represent various details
                       of the KMS server
@@ -3881,6 +4019,61 @@ spec:
                           type: string
                         type: array
                     type: object
+                  serviceVectors:
+                    description: ServiceStatus is the status info and network addresses
+                      of a service
+                    properties:
+                      externalDNS:
+                        description: ExternalDNS are external public addresses for
+                          the service
+                        items:
+                          type: string
+                        type: array
+                      externalIP:
+                        description: |-
+                          ExternalIP are external public addresses for the service
+                          LoadBalancerPorts such as AWS ELB provide public address and load balancing for the service
+                          IngressPorts are manually created public addresses for the service
+                          https://kubernetes.io/docs/concepts/services-networking/service/#external-ips
+                          https://kubernetes.io/docs/concepts/services-networking/service/#loadbalancer
+                          https://kubernetes.io/docs/concepts/services-networking/ingress/
+                        items:
+                          type: string
+                        type: array
+                      internalDNS:
+                        description: InternalDNS are internal addresses of the service
+                          inside the cluster
+                        items:
+                          type: string
+                        type: array
+                      internalIP:
+                        description: |-
+                          InternalIP are internal addresses of the service inside the cluster
+                          https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
+                        items:
+                          type: string
+                        type: array
+                      nodePorts:
+                        description: |-
+                          NodePorts are the most basic network available.
+                          NodePorts use the networks available on the hosts of kubernetes nodes.
+                          This generally works from within a pod, and from the internal
+                          network of the nodes, but may fail from public network.
+                          https://kubernetes.io/docs/concepts/services-networking/service/#nodeport
+                        items:
+                          type: string
+                        type: array
+                      podPorts:
+                        description: |-
+                          PodPorts are the second most basic network address.
+                          Every pod has an IP in the cluster and the pods network is a mesh
+                          so the operator running inside a pod in the cluster can use this address.
+                          Note: pod IPs are not guaranteed to persist over restarts, so should be rediscovered.
+                          Note2: when running the operator outside of the cluster, pod IP is not accessible.
+                        items:
+                          type: string
+                        type: array
+                    type: object
                 required:
                 - serviceMgmt
                 - serviceS3
@@ -4129,7 +4322,7 @@ data:
     shared_preload_libraries = 'pg_stat_statements'
 `
 
-const Sha256_deploy_internal_deployment_endpoint_yaml = "993fc53b16da6485abff75cf76a0d0d15f10e2319f0b519010808e2ea20df1c6"
+const Sha256_deploy_internal_deployment_endpoint_yaml = "0b27c64555dcf8b21934c3b58419ca0d40a69868fe0764028edf07f0217195e0"
 
 const File_deploy_internal_deployment_endpoint_yaml = `apiVersion: apps/v1
 kind: Deployment
@@ -4174,8 +4367,13 @@ spec:
           secret:
             secretName: noobaa-iam-serving-cert
             optional: true
+        - name: vectors-secret
+          secret:
+            secretName: noobaa-vectors-serving-cert
+            optional: true
         # This service account token can be used to provide identity outside the cluster.
-        # For example, this token can be used with AssumeRoleWithWebIdentity to authenticate with AWS using IAM OIDC provider and STS.
+        # For example, this token can be used with AWS(AssumeRoleWithWebIdentity)/Azure(WorkloadIdentityCredential) 
+        # to authenticate with AWS/Azure using IAM OIDC provider and STS.
         - name: bound-sa-token
           projected:
             sources:
@@ -4217,6 +4415,10 @@ spec:
             - containerPort: 7443
             - containerPort: 13443
               name: iam-https
+            - containerPort: 9443
+              name: metrics-https
+            - containerPort: 14443
+              name: vectors-https
           env:
             - name: NODE_NAME
               valueFrom:
@@ -4273,6 +4475,9 @@ spec:
             - name: LOCAL_N2N_AGENT
             - name: NODE_EXTRA_CA_CERTS
             - name: GUARANTEED_LOGS_PATH
+            - name: TLS_MIN_VERSION
+            - name: TLS_CIPHERS
+            - name: TLS_GROUPS
             - name: CONTAINER_CPU_REQUEST
               valueFrom:
                 resourceFieldRef:
@@ -4309,6 +4514,9 @@ spec:
               readOnly: true
             - name: sts-secret
               mountPath: /etc/sts-secret
+              readOnly: true
+            - name: vectors-secret
+              mountPath: /etc/vector-secret
               readOnly: true
             # used for aws sts endpoint type
             - name: bound-sa-token
@@ -4698,7 +4906,7 @@ spec:
         secretName: AGENT_CONFIG_SECRET_NAME
 `
 
-const Sha256_deploy_internal_prometheus_rules_yaml = "dac4b932bd715af0ae7a5f833dec0cd168a67a699c6e83f0b38eb5f90ba44dd1"
+const Sha256_deploy_internal_prometheus_rules_yaml = "e9459a8324df510af74b253ed24c155c5bacaf7b4d4ac4912b6c7863e965089e"
 
 const File_deploy_internal_prometheus_rules_yaml = `apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
@@ -4788,13 +4996,28 @@ spec:
     - expr: |
         count_over_time(count by (replication_id) (NooBaa_replication_last_cycle_writes_size)[1y:6m])
       record: noobaa_replication_total_cycles
+  - name: replication-alert.rules
+    rules:
+    - alert: NooBaaReplicationTargetUnreachable
+      annotations:
+        description: A NooBaa replication from bucket {{ $labels.source_bucket }} to bucket
+          {{ $labels.target_bucket }} is failing for more than 5m
+        message: A NooBaa Replication Target Is Unreachable
+        severity_level: warning
+        storage_type: NooBaa
+      expr: |
+        NooBaa_replication_target_status{source_bucket=~".+", target_bucket=~".+"} == 0
+      for: 5m
+      labels:
+        severity: warning
   - name: bucket-state-alert.rules
     rules:
     - alert: NooBaaBucketErrorState
       annotations:
-        description: A NooBaa bucket {{ $labels.bucket_name }} is in error state for
-          more than 5m
-        message: A NooBaa Bucket Is In Error State
+        description: A NooBaa bucket {{ $labels.bucket_name }} is in error state
+          (mode={{ $labels.bucket_mode }}) for more than 5m. Tier or resource modes
+          often indicate backingstore/bucketclass issues.
+        message: A NooBaa Bucket Is In Error State (mode={{ $labels.bucket_mode }})
         severity_level: warning
         storage_type: NooBaa
       expr: |
@@ -4805,8 +5028,9 @@ spec:
     - alert: NooBaaNamespaceBucketErrorState
       annotations:
         description: A NooBaa namespace bucket {{ $labels.bucket_name }} is in error
-          state for more than 5m
-        message: A NooBaa Namespace Bucket Is In Error State
+          state (mode={{ $labels.bucket_mode }}) for more than 5m. Tier or resource
+          modes often indicate namespacestore/bucketclass issues.
+        message: A NooBaa Namespace Bucket Is In Error State (mode={{ $labels.bucket_mode }})
         severity_level: warning
         storage_type: NooBaa
       expr: |
@@ -4860,27 +5084,14 @@ spec:
       for: 5m
       labels:
         severity: warning
-    - alert: NooBaaBucketLowCapacityState
+    - alert: NooBaaBackingStoreLowCapacityState
       annotations:
-        description: A NooBaa bucket {{ $labels.bucket_name }} is using {{ printf
-          "%0.0f" $value }}% of its capacity
-        message: A NooBaa Bucket Is In Low Capacity State
+        description: A NooBaa backing store {{ $labels.backing_store_name }} is in low capacity.
+        message: A NooBaa backing store is in low capacity state.
         severity_level: warning
         storage_type: NooBaa
       expr: |
-        NooBaa_bucket_capacity{bucket_name=~".*"} > 80
-      for: 5m
-      labels:
-        severity: warning
-    - alert: NooBaaBucketNoCapacityState
-      annotations:
-        description: A NooBaa bucket {{ $labels.bucket_name }} is using all of its
-          capacity
-        message: A NooBaa Bucket Is In No Capacity State
-        severity_level: warning
-        storage_type: NooBaa
-      expr: |
-        NooBaa_bucket_capacity{bucket_name=~".*"} > 95
+        NooBaa_backing_store_low_capacity{resource_name=~".*"} == 1
       for: 5m
       labels:
         severity: warning
@@ -5086,6 +5297,26 @@ spec:
   wildcardPolicy: None
 `
 
+const Sha256_deploy_internal_route_vectors_yaml = "ff546544c1edc8a1dbbe50f58ee35a7595caf6dd17806a8528a8190ca1c0d0f9"
+
+const File_deploy_internal_route_vectors_yaml = `apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  labels:
+    app: noobaa
+  name: vectors
+spec:
+  port:
+    targetPort: vectors-https
+  tls:
+    termination: reencrypt
+  to:
+    kind: Service
+    name: vectors
+    weight: 100
+  wildcardPolicy: None
+`
+
 const Sha256_deploy_internal_secret_empty_yaml = "d63aaeaf7f9c7c1421fcc138ee2f31d2461de0dec2f68120bc9cce367d4d4186"
 
 const File_deploy_internal_secret_empty_yaml = `apiVersion: v1
@@ -5140,7 +5371,7 @@ spec:
       name: iam-https
 `
 
-const Sha256_deploy_internal_service_mgmt_yaml = "fa5f052fb360e6893fc446a318413a6f494a8610706ae7e36ff985b3b3a5c070"
+const Sha256_deploy_internal_service_mgmt_yaml = "758174ba728febd71b5809671cb49a3a9e148f66637e59ff8aae905918bcd36a"
 
 const File_deploy_internal_service_mgmt_yaml = `apiVersion: v1
 kind: Service
@@ -5150,9 +5381,6 @@ metadata:
     app: noobaa
     noobaa-mgmt-svc: "true"
   annotations:
-    prometheus.io/scrape: "true"
-    prometheus.io/scheme: http
-    prometheus.io/port: "8080"
     service.beta.openshift.io/serving-cert-secret-name: noobaa-mgmt-serving-cert
     service.alpha.openshift.io/serving-cert-secret-name: noobaa-mgmt-serving-cert
 spec:
@@ -5172,7 +5400,7 @@ spec:
       name: hosted-agents-https
 `
 
-const Sha256_deploy_internal_service_s3_yaml = "df7d8c8ee81b820678b7d8648b26c6cf86da6be00caedad052c3848db5480c37"
+const Sha256_deploy_internal_service_s3_yaml = "55261b19002fbd3c780385fc8a357dc9eff691ebf52cfc0e0348af151ede5774"
 
 const File_deploy_internal_service_s3_yaml = `apiVersion: v1
 kind: Service
@@ -5197,8 +5425,8 @@ spec:
       name: s3-https
     - port: 8444
       name: md-https
-    - port: 7004
-      name: metrics
+    - port: 9443
+      name: metrics-https
 
 `
 
@@ -5244,12 +5472,36 @@ spec:
       targetPort: 5140
 `
 
-const Sha256_deploy_internal_service_admission_webhook_yaml = "810a70b263d44621713864aa6e6e72e6079bbdc02f6e2b9143ba9ebf4ab52102"
+const Sha256_deploy_internal_service_vectors_yaml = "5d9f7d228197107d1fa727581dbe3c0dd0cc2aca6855fc0d2bbec67273b66ff7"
+
+const File_deploy_internal_service_vectors_yaml = `apiVersion: v1
+kind: Service
+metadata:
+  name: vectors
+  labels:
+    app: noobaa
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: 'noobaa-vectors-serving-cert'
+    service.alpha.openshift.io/serving-cert-secret-name: 'noobaa-vectors-serving-cert'
+spec:
+  type: LoadBalancer
+  selector:
+    noobaa-s3: SYSNAME
+  ports:
+    - port: 443
+      targetPort: 14443
+      name: vectors-https
+
+`
+
+const Sha256_deploy_internal_service_admission_webhook_yaml = "913cdbbc67c5b0d7245cd3b799c7da00a1a1f3c7e7339c418d08a8e624d6365f"
 
 const File_deploy_internal_service_admission_webhook_yaml = `apiVersion: v1
 kind: Service
 metadata:
   name: admission-webhook-service
+  labels:
+    app: noobaa
 spec:
   ports:
   - name: webhook
@@ -5259,7 +5511,7 @@ spec:
     noobaa-operator: deployment
 `
 
-const Sha256_deploy_internal_servicemonitor_mgmt_yaml = "172b25b71872e74fb32ecf32b9c68d41cc60d155cb469ed5ecf7ad282f3e597a"
+const Sha256_deploy_internal_servicemonitor_mgmt_yaml = "dd92e14c909a2b7605df90ae50647894f7aef63553e86d3a13d7edec6405f9e4"
 
 const File_deploy_internal_servicemonitor_mgmt_yaml = `apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
@@ -5269,19 +5521,22 @@ metadata:
     app: noobaa
 spec:
   endpoints:
-  - port: mgmt
+  - port: mgmt-https
     path: /metrics/web_server
-  - port: mgmt
+    scheme: https
+  - port: mgmt-https
     path: /metrics/bg_workers
-  - port: mgmt
+    scheme: https
+  - port: mgmt-https
     path: /metrics/hosted_agents
+    scheme: https
   namespaceSelector: {}
   selector:
     matchLabels:
       noobaa-mgmt-svc: "true"
 `
 
-const Sha256_deploy_internal_servicemonitor_s3_yaml = "e3940bdfdfbaf5cacefa51f92623ffb00e5360e58640c67558b5cf5135edd57f"
+const Sha256_deploy_internal_servicemonitor_s3_yaml = "cff9fc9a511cc8ae5c0b957e91ab91ed0b8e9ed9e4d50094592332cea7a2ddc1"
 
 const File_deploy_internal_servicemonitor_s3_yaml = `apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
@@ -5291,15 +5546,16 @@ metadata:
     app: noobaa
 spec:
   endpoints:
-  - port: metrics
+  - port: metrics-https
     path: /
+    scheme: https
   namespaceSelector: {}
   selector:
     matchLabels:
       noobaa-s3-svc: "true"
 `
 
-const Sha256_deploy_internal_statefulset_core_yaml = "3dba40ad6babb033832e999680f333849bf3f194a24aa1163587529315ebe8da"
+const Sha256_deploy_internal_statefulset_core_yaml = "950eaab1e58069eec4df071a6020f75914586a5a2b25f56470059cc9c0b7f892"
 
 const File_deploy_internal_statefulset_core_yaml = `apiVersion: apps/v1
 kind: StatefulSet
@@ -5338,7 +5594,8 @@ spec:
             secretName: noobaa-server
             optional: true
         # This service account token can be used to provide identity outside the cluster.
-        # For example, this token can be used with AssumeRoleWithWebIdentity to authenticate with AWS using IAM OIDC provider and STS.
+        # For example, this token can be used with AWS(AssumeRoleWithWebIdentity)/Azure(WorkloadIdentityCredential) 
+        # to authenticate with AWS/Azure using IAM OIDC provider and STS.
         - name: bound-sa-token
           projected:
             sources:
@@ -5467,6 +5724,9 @@ spec:
               valueFrom:
                 resourceFieldRef:
                   resource: limits.memory
+          envFrom:
+            - configMapRef:
+                name: noobaa-config
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -6397,7 +6657,7 @@ spec:
   sourceNamespace: default
 `
 
-const Sha256_deploy_operator_yaml = "49b1f15cdda417e6cd5b99dd162ca666e24bf18184f5abc45eaaa690da6d3898"
+const Sha256_deploy_operator_yaml = "8f2d1b2d9b43ca5aa530bc6cf1f4d094a1fa04622b70e434af93afdfc75b65c9"
 
 const File_deploy_operator_yaml = `apiVersion: apps/v1
 kind: Deployment
@@ -6423,7 +6683,8 @@ spec:
           type: RuntimeDefault
       volumes:
       # This service account token can be used to provide identity outside the cluster.
-      # For example, this token can be used with AssumeRoleWithWebIdentity to authenticate with AWS using IAM OIDC provider and STS.
+      # For example, this token can be used with AWS(AssumeRoleWithWebIdentity)/Azure(WorkloadIdentityCredential) 
+      # to authenticate with AWS/Azure using IAM OIDC provider and STS.
       - name: bound-sa-token
         projected:
           sources:
@@ -6994,7 +7255,7 @@ rules:
     - delete
 `
 
-const Sha256_deploy_role_ui_yaml = "d1929d57d9d9bf021e83be275ea45ec17f83a700d9a74936742ba50c41d2c0bb"
+const Sha256_deploy_role_ui_yaml = "38249d9c79eb75c4d20201f640c020ced37ec0200f304977324941097d99bf2a"
 
 const File_deploy_role_ui_yaml = `apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -7010,6 +7271,7 @@ rules:
     resources:
       - noobaas
       - bucketclasses
+      - namespacestores
 `
 
 const Sha256_deploy_scc_yaml = "baa4d3a3def2d63a5d9e53bc4fc1ac961f9b4fe5172db7118d1529caa14e2191"

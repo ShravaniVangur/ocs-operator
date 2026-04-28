@@ -292,6 +292,7 @@ rules:
   - ocs.openshift.io
   resources:
   - storageclusters
+  - tlsprofiles
   verbs:
   - get
   - list

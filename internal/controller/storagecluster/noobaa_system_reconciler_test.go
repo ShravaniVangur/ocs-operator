@@ -9,6 +9,7 @@ import (
 	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
 	v1 "github.com/red-hat-storage/ocs-operator/api/v4/v1"
 	"github.com/red-hat-storage/ocs-operator/v4/pkg/util"
+	ocstlsv1 "github.com/red-hat-storage/ocs-tls-profiles/api/v1"
 	cephv1 "github.com/rook/rook/pkg/apis/ceph.rook.io/v1"
 	"github.com/stretchr/testify/assert"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -342,7 +343,13 @@ func TestSetNooBaaDesiredState(t *testing.T) {
 			assert.Failf(t, "[%s] unable to set env_var %s", c.label, dbEnvVar)
 		}
 
+		scheme := createFakeScheme(t)
+		client := fake.NewClientBuilder().WithScheme(scheme).Build()
 		reconciler := StorageClusterReconciler{
+			ctx:               context.TODO(),
+			Client:            client,
+			Scheme:            scheme,
+			OperatorNamespace: "openshift-storage",
 			OperatorCondition: newStubOperatorCondition(),
 			Log:               logf.Log.WithName("controller_storagecluster_test"),
 		}
@@ -358,7 +365,8 @@ func TestSetNooBaaDesiredState(t *testing.T) {
 				Namespace: defaultInput.Namespace,
 			},
 		}
-		err = reconciler.setNooBaaDesiredState(&noobaa, &c.sc)
+		// TODO (leelavg): after noobaa api update expand the unit test to pass valid profile
+		err = reconciler.setNooBaaDesiredState(&noobaa, &c.sc, &ocstlsv1.TLSProfile{})
 		if err != nil {
 			assert.Failf(t, "[%s] unable to set noobaa desired state", c.label)
 		}

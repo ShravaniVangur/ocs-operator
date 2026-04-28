@@ -1,7 +1,9 @@
 package storagecluster
 
 import (
+	"cmp"
 	"context"
+	"crypto/tls"
 	"fmt"
 
 	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
@@ -9,6 +11,7 @@ import (
 	ocsv1 "github.com/red-hat-storage/ocs-operator/api/v4/v1"
 	"github.com/red-hat-storage/ocs-operator/v4/pkg/defaults"
 	"github.com/red-hat-storage/ocs-operator/v4/pkg/util"
+	ocstlsv1 "github.com/red-hat-storage/ocs-tls-profiles/api/v1"
 	rookCephv1 "github.com/rook/rook/pkg/apis/ceph.rook.io/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -16,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/reference"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -25,7 +29,9 @@ const (
 	MonitoringNamespace = "openshift-monitoring"
 )
 
-type ocsNoobaaSystem struct{}
+type ocsNoobaaSystem struct {
+	tlsProfile *ocstlsv1.TLSProfile
+}
 
 func (obj *ocsNoobaaSystem) ensureCreated(r *StorageClusterReconciler, sc *ocsv1.StorageCluster) (reconcile.Result, error) {
 	// skip noobaa reconcile if it is not requested from same namespace as operator
@@ -93,7 +99,7 @@ func (obj *ocsNoobaaSystem) ensureCreated(r *StorageClusterReconciler, sc *ocsv1
 
 	// Reconcile the noobaa state, creating or updating if needed
 	_, err = controllerutil.CreateOrUpdate(context.TODO(), r.Client, nb, func() error {
-		return r.setNooBaaDesiredState(nb, sc)
+		return r.setNooBaaDesiredState(nb, sc, obj.tlsProfile)
 	})
 	if err != nil {
 		r.Log.Error(err, "Failed to create or update NooBaa system.", "Noobaa", klog.KRef(nb.Namespace, nb.Name))
@@ -128,7 +134,7 @@ func getNooBaaMonitoringLabels(sc ocsv1.StorageCluster) map[string]string {
 	return labels
 }
 
-func (r *StorageClusterReconciler) setNooBaaDesiredState(nb *nbv1.NooBaa, sc *ocsv1.StorageCluster) error {
+func (r *StorageClusterReconciler) setNooBaaDesiredState(nb *nbv1.NooBaa, sc *ocsv1.StorageCluster, tlsProfile *ocstlsv1.TLSProfile) error {
 	coreResources := getDaemonResources("noobaa-core", sc)
 	dbResources := getDaemonResources("noobaa-db", sc)
 	dBVolumeResources := getDaemonResources("noobaa-db-vol", sc)
@@ -272,6 +278,60 @@ func (r *StorageClusterReconciler) setNooBaaDesiredState(nb *nbv1.NooBaa, sc *oc
 	isEnabled, rotationSchedule := util.GetKeyRotationSpec(sc)
 	nb.Spec.Security.KeyManagementService.EnableKeyRotation = isEnabled
 	nb.Spec.Security.KeyManagementService.Schedule = rotationSchedule
+
+	if tlsProfile == nil {
+		nb.Spec.Security.APIServerSecurity = nil
+		return nil
+	}
+	if cfg, found := ocstlsv1.GetConfigForServer(tlsProfile, "noobaa.io", ""); found {
+		if err := ocstlsv1.ValidateTLSConfig(cfg); err != nil {
+			return err
+		}
+
+		gotls := ocstlsv1.GetGoTLSConfig(cfg)
+		apiSecurity := cmp.Or(nb.Spec.Security.APIServerSecurity, &nbv1.TLSSecuritySpec{})
+		switch gotls.MinVersion {
+		case tls.VersionTLS12:
+			apiSecurity.TLSMinVersion = ptr.To(nbv1.VersionTLS12)
+		case tls.VersionTLS13:
+			apiSecurity.TLSMinVersion = ptr.To(nbv1.VersionTLS13)
+		}
+
+		tlsCiphers := make([]string, 0, len(gotls.CipherSuites))
+		for _, cipher := range gotls.CipherSuites {
+			tlsCiphers = append(tlsCiphers, tls.CipherSuiteName(cipher))
+		}
+		apiSecurity.TLSCiphers = tlsCiphers
+
+		tlsGroups := make([]nbv1.TLSGroup, 0, len(gotls.CurvePreferences))
+		var tlsGroup nbv1.TLSGroup
+		for _, group := range gotls.CurvePreferences {
+			switch group {
+			case tls.CurveP256:
+				tlsGroup = nbv1.TLSGroupSecp256r1
+			case tls.CurveP384:
+				tlsGroup = nbv1.TLSGroupSecp384r1
+			case tls.CurveP521:
+				tlsGroup = nbv1.TLSGroupSecp521r1
+			case tls.X25519:
+				tlsGroup = nbv1.TLSGroupX25519
+			case tls.X25519MLKEM768:
+				tlsGroup = nbv1.TLSGroupX25519MLKEM768
+			case tls.CurveID(4587): // SecP256r1MLKEM768
+				tlsGroup = nbv1.TLSGroupSecP256r1MLKEM768
+			case tls.CurveID(4589): // SecP384r1MLKEM1024
+				tlsGroup = nbv1.TLSGroupSecP384r1MLKEM1024
+			}
+			if tlsGroup != "" {
+				tlsGroups = append(tlsGroups, tlsGroup)
+			}
+			tlsGroup = ""
+		}
+		apiSecurity.TLSGroups = tlsGroups
+		nb.Spec.Security.APIServerSecurity = apiSecurity
+	} else {
+		nb.Spec.Security.APIServerSecurity = nil
+	}
 	return nil
 }
 

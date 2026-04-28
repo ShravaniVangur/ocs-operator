@@ -8,6 +8,7 @@ import (
 	operatorv1 "github.com/operator-framework/api/pkg/operators/v1"
 	operatorv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	ocsv1 "github.com/red-hat-storage/ocs-operator/api/v4/v1"
+	ocstlsv1 "github.com/red-hat-storage/ocs-tls-profiles/api/v1"
 	rookcephv1 "github.com/rook/rook/pkg/apis/ceph.rook.io/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -51,6 +52,7 @@ func init() {
 	utilruntime.Must(ocsv1.AddToScheme(scheme))
 	utilruntime.Must(rookcephv1.AddToScheme(scheme))
 	utilruntime.Must(nbv1.AddToScheme(scheme))
+	utilruntime.Must(ocstlsv1.AddToScheme(scheme))
 }
 
 type arbiterConfig struct {
