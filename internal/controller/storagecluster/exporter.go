@@ -333,6 +333,13 @@ func deployMetricsExporter(ctx context.Context, r *StorageClusterReconciler, ins
 			Namespace: instance.Namespace,
 		},
 	}
+
+	hostNetwork := util.ShouldUseHostNetworking(instance)
+	dnsPolicy := corev1.DNSClusterFirst
+	if hostNetwork {
+		dnsPolicy = corev1.DNSClusterFirstWithHostNet
+	}
+
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, currentDep, func() error {
 		if currentDep.CreationTimestamp.IsZero() {
 			// Selector is immutable. Inject it only while creating new object.
@@ -371,7 +378,8 @@ func deployMetricsExporter(ctx context.Context, r *StorageClusterReconciler, ins
 				SecurityContext: &corev1.PodSecurityContext{
 					RunAsNonRoot: ptr.To(true),
 				},
-				HostNetwork: util.ShouldUseHostNetworking(instance),
+				HostNetwork: hostNetwork,
+				DNSPolicy:   dnsPolicy,
 				Containers: []corev1.Container{
 					{
 						Args: func() []string {
