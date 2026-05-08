@@ -324,9 +324,9 @@ func (r *StorageClusterReconciler) newCephObjectStoreInstances(initData *ocsv1.S
 				if obj.Spec.Security.SslOptions == nil {
 					obj.Spec.Security.SslOptions = &cephv1.SslOptionsSpec{}
 				}
-				// rook by default disables older versions except 1.2 and we explicitly disable it
-				// making 1.3 as the default
-				obj.Spec.Security.SslOptions.SSLv2 = ptr.To(false)
+				// beast frontend enables TLS 1.2 by default; explicitly disable it
+				// so that TLS 1.3 becomes the minimum version
+				obj.Spec.Security.SslOptions.TLSv1_2 = ptr.To(false)
 			}
 			obj.Spec.Security.Ciphers = osstls.Ciphers
 			obj.Spec.Security.TlsGroups = osstls.Groups
