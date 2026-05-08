@@ -484,11 +484,11 @@ func TestRGWTLSConfig(t *testing.T) {
 		assert.Contains(t, stores[0].Spec.Security.Ciphers, "ECDHE-RSA-AES256-GCM-SHA384")
 		assert.Contains(t, stores[0].Spec.Security.TlsGroups, "prime256v1")
 		assert.Contains(t, stores[0].Spec.Security.TlsGroups, "secp384r1")
-		// TLS 1.2 must not set SSLv2 option
+		// TLS 1.2 must not set SslOptions
 		assert.Nil(t, stores[0].Spec.Security.SslOptions)
 	})
 
-	t.Run("TLS 1.3 profile with rook.io selector disables SSLv2", func(t *testing.T) {
+	t.Run("TLS 1.3 profile with rook.io selector disables TLS 1.2", func(t *testing.T) {
 		profile := makeTLSProfile(
 			"rook.io",
 			ocstlsv1.VersionTLS1_3,
@@ -500,7 +500,7 @@ func TestRGWTLSConfig(t *testing.T) {
 		assert.NotNil(t, stores[0].Spec.Security)
 		assert.Contains(t, stores[0].Spec.Security.TlsGroups, "x25519")
 		assert.NotNil(t, stores[0].Spec.Security.SslOptions)
-		assert.Equal(t, ptr.To(false), stores[0].Spec.Security.SslOptions.SSLv2)
+		assert.Equal(t, ptr.To(false), stores[0].Spec.Security.SslOptions.TLSv1_2)
 	})
 
 	t.Run("Profile with non-matching selector falls back to DEFAULT groups", func(t *testing.T) {
