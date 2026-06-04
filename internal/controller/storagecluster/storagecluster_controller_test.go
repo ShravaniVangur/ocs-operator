@@ -35,6 +35,7 @@ import (
 	ocstlsv1 "github.com/red-hat-storage/ocs-tls-profiles/api/v1"
 	rookCephv1 "github.com/rook/rook/pkg/apis/ceph.rook.io/v1"
 	"github.com/stretchr/testify/assert"
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -1300,6 +1301,11 @@ func createFakeScheme(t *testing.T) *runtime.Scheme {
 	err = ocstlsv1.AddToScheme(scheme)
 	if err != nil {
 		assert.Fail(t, "unable to add ocstlsv1 to scheme")
+	}
+
+	err = admissionregistrationv1.AddToScheme(scheme)
+	if err != nil {
+		assert.Fail(t, "unable to add admissionregistrationv1 to scheme")
 	}
 
 	return scheme
